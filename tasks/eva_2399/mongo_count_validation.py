@@ -1,5 +1,4 @@
 import argparse
-from argparse import ArgumentParser
 from datetime import datetime
 
 import psycopg2
@@ -81,7 +80,7 @@ def get_databases_list_for_validation(file_path):
 
 
 def main():
-    parser: ArgumentParser = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description='Given a list of databases, calculate number of documents in each collection of each of the given database and store the report',
         formatter_class=argparse.RawTextHelpFormatter, add_help=False)
     parser.add_argument("--mongo-source-uri",
