@@ -4,6 +4,7 @@ from datetime import datetime
 from ebi_eva_common_pyutils.logger import logging_config
 from ebi_eva_common_pyutils.mongodb import MongoDatabase
 
+from accession_incremental_migration import accession_export
 from migration_util import mongo_import_from_dir
 from variant_incremental_migration import variants_export
 
@@ -53,7 +54,8 @@ def main():
         end_time = datetime.now().__str__()
 
     # accession export
-    # accession_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir, args.start_time,end_time)
+    accession_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir, args.start_time,
+                     end_time)
     # variants export
     variants_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir, args.start_time,
                     end_time)

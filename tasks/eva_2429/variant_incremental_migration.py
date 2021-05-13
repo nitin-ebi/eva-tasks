@@ -3,6 +3,7 @@ import os.path
 
 import psycopg2
 import psycopg2.extras
+from ebi_eva_common_pyutils.config_utils import get_pg_metadata_uri_for_eva_profile
 from ebi_eva_common_pyutils.logger import logging_config
 from ebi_eva_common_pyutils.pg_utils import get_all_results_for_query
 
@@ -24,10 +25,8 @@ annotation_metadata_query_file_name = "annotations_metadata_query.txt"
 
 
 def find_variants_studies_eligible_for_migration(private_config_xml_file, migration_start_time, migration_end_time):
-    # with psycopg2.connect(get_pg_metadata_uri_for_eva_profile("production", private_config_xml_file),
-    #                      user="evajt") as metadata_connection_handle:
-    with psycopg2.connect("postgresql://pgsql-hxvm7-010.ebi.ac.uk:5432/vrnevajtpro",
-                          user="evajt", password="Vc0T1ceR") as metadata_connection_handle:
+    with psycopg2.connect(get_pg_metadata_uri_for_eva_profile("production", private_config_xml_file),
+                          user="evajt") as metadata_connection_handle:
         query_string = f"select bjep.job_execution_id, bjep.key_name, bjep.string_val, bje.start_time \
                         from batch_job_execution bje join batch_job_execution_params bjep \
                         on bje.job_execution_id=bjep.job_execution_id \
