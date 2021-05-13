@@ -1,9 +1,9 @@
 import json
 import os.path
+from itertools import islice
 
 import psycopg2
 import psycopg2.extras
-from ebi_eva_common_pyutils.config_utils import get_pg_metadata_uri_for_eva_profile
 from ebi_eva_common_pyutils.logger import logging_config
 from ebi_eva_common_pyutils.pg_utils import get_all_results_for_query
 
@@ -20,13 +20,17 @@ variant_collection = "variants_2_0"
 files_collection = "files_2_0"
 annotation_collection = "annotations_2_0"
 annotation_metadata_collection = "annotationMetadata_2_0"
+files_query_file_name = "files_query.txt"
+variants_query_file_name = "variants_query.txt"
 annotation_query_file_name = "annotations_query.txt"
 annotation_metadata_query_file_name = "annotations_metadata_query.txt"
+pgsql_variant_connection_uri = "postgresql://pgsql-hxvm7-010.ebi.ac.uk:5432/vrnevajtpro"
+pgsql_variant_user = "evajt"
+chunk_size = 100
 
 
-def find_variants_studies_eligible_for_migration(private_config_xml_file, migration_start_time, migration_end_time):
-    with psycopg2.connect(get_pg_metadata_uri_for_eva_profile("production", private_config_xml_file),
-                          user="evajt") as metadata_connection_handle:
+def find_variants_studies_eligible_for_migration(migration_start_time, migration_end_time):
+    with psycopg2.connect(pgsql_variant_connection_uri, user=pgsql_variant_user) as metadata_connection_handle:
         query_string = f"select bjep.job_execution_id, bjep.key_name, bjep.string_val, bje.start_time \
                         from batch_job_execution bje join batch_job_execution_params bjep \
                         on bje.job_execution_id=bjep.job_execution_id \
@@ -48,28 +52,30 @@ def find_variants_studies_eligible_for_migration(private_config_xml_file, migrat
     return db_study_dict
 
 
-def mongo_export_files_variants_data(mongo_source, db_study_dict, export_dir):
+def mongo_export_files_variants_data(mongo_source, db_study_dict, export_dir, query_dir):
     logger.info(f"Starting mongo export process for  mongo ({({mongo_source.mongo_handle.address[0]})})")
     for db, study_vcf in db_study_dict.items():
         invalidate_and_set_db(mongo_source, db)
+        files_query = create_files_query(study_vcf)
+        files_query_path = write_query_to_file(files_query, query_dir, files_query_file_name)
         files_mongo_args = {
             "collection": files_collection,
-            "query": create_files_query(study_vcf),
-            "jsonArray": ""
+            "queryFile": files_query_path
         }
         logger.info(
             f"Exporting data for database ({db}): collection ({files_collection}) - mongo_args ({files_mongo_args})")
-        files_export_file = os.path.join(export_dir, db, f"{files_collection}")
+        files_export_file = os.path.join(export_dir, db, files_collection, files_collection)
         export_data(mongo_source, files_export_file, files_mongo_args)
 
+        variants_query = create_variants_query(study_vcf)
+        variants_query_path = write_query_to_file(variants_query, query_dir, variants_query_file_name)
         variants_mongo_args = {
             "collection": variant_collection,
-            "query": create_variants_query(study_vcf),
-            "jsonArray": ""
+            "queryFile": variants_query_path
         }
         logger.info(
             f"Exporting data for database ({db}): collection ({variant_collection}) - mongo_args ({variants_mongo_args})")
-        variant_export_file = os.path.join(export_dir, db, f"{variant_collection}")
+        variant_export_file = os.path.join(export_dir, db, variant_collection, variant_collection)
         export_data(mongo_source, variant_export_file, variants_mongo_args)
 
 
@@ -77,51 +83,54 @@ def mongo_export_annotations_data(mongo_source, export_dir, query_dir):
     db_list = os.listdir(export_dir)
     for db in db_list:
         invalidate_and_set_db(mongo_source, db)
-        variant_file_loc = os.path.join(export_dir, db, variant_collection)
-
+        variant_file_loc = os.path.join(export_dir, db, variant_collection, variant_collection)
         if os.path.isfile(variant_file_loc):
-            annotations = get_annotations_ids(variant_file_loc)
-            annotation_ids = annotations["annotations_id"]
-            annotation_metadata_ids = annotations["annotations_metadata_id"]
-            if annotation_ids:
-                export_annotations_data(mongo_source, db, annotation_collection, annotation_ids, export_dir, query_dir,
-                                        annotation_query_file_name)
+            with open(variant_file_loc, 'r') as variant_file:
+                chunk_number = 0
+                while True:
+                    variant_batch = list(islice(variant_file, chunk_size))
+                    if not variant_batch:
+                        break
+                    annotations = get_annotations_ids(variant_batch)
+                    annotation_ids = annotations["annotations_id"]
+                    annotation_metadata_ids = annotations["annotations_metadata_id"]
+                    if annotation_ids:
+                        export_annotations_data(mongo_source, db, annotation_collection, annotation_ids, export_dir,
+                                                query_dir, annotation_query_file_name, chunk_number)
+                    if annotation_metadata_ids:
+                        export_annotations_data(mongo_source, db, annotation_metadata_collection,
+                                                annotation_metadata_ids, export_dir, query_dir,
+                                                annotation_metadata_query_file_name, chunk_number)
+                    chunk_number = chunk_number + 1
 
-            if annotation_metadata_ids:
-                export_annotations_data(mongo_source, db, annotation_metadata_collection, annotation_metadata_ids,
-                                        export_dir, query_dir, annotation_metadata_query_file_name)
 
-
-def export_annotations_data(mongo_source, db, collection, ids, export_dir, query_dir, query_file_name):
+def export_annotations_data(mongo_source, db, collection, ids, export_dir, query_dir, query_file_name, chunk_number):
     query = create_query_with_ids(ids)
     query_file_path = write_query_to_file(query, query_dir, query_file_name)
     mongo_annot_args = {
         "collection": collection,
-        "queryFile": query_file_path,
-        "jsonArray": ""
+        "queryFile": query_file_path
     }
     logger.info(
         f"Exporting data for database ({db} and collection ({collection}) - mongo_args({mongo_annot_args})")
-    export_file = os.path.join(export_dir, db, f"{collection}")
+    export_file = os.path.join(export_dir, db, collection, f'{collection}_{chunk_number}')
     export_data(mongo_source, export_file, mongo_annot_args)
 
 
-def get_annotations_ids(file_loc):
+def get_annotations_ids(variant_batch):
     annotations_list = {
         "annotations_id": set(),
         "annotations_metadata_id": set()
     }
-    with open(file_loc, 'r') as variant_file:
-        variant_list = json.load(variant_file)
-        for variant in variant_list:
-            if "annot" not in variant:
-                continue
-            else:
-                annot_array = variant["annot"]
-                for annot in annot_array:
-                    annotations_list["annotations_id"].add(
-                        f'{variant["chr"]}_{variant["end"]}_{variant["ref"]}_{variant["alt"]}_{annot["vepv"]}_{annot["cachev"]}')
-                    annotations_list["annotations_metadata_id"].add(f'{annot["vepv"]}_{annot["cachev"]}')
+    for variant_str in variant_batch:
+        variant = json.loads(variant_str)
+        if "annot" not in variant:
+            continue
+        else:
+            annot_array = variant["annot"]
+            for annot in annot_array:
+                annotations_list["annotations_id"].add(f'{variant["_id"]}_{annot["vepv"]}_{annot["cachev"]}')
+                annotations_list["annotations_metadata_id"].add(f'{annot["vepv"]}_{annot["cachev"]}')
 
     return annotations_list
 
@@ -131,7 +140,7 @@ def create_files_query(study_vcf):
     query_beg = "{$or:["
     study_string = ",".join("{sid:\"" + x[0] + "\",fid:\"" + x[1] + "\"}" for x in study_vcf)
     query_end = "]}"
-    files_query = f"'{query_beg}{study_string}{query_end}'"
+    files_query = query_beg + study_string + query_end
     logger.info(f"query created for files collection migration : {files_query}")
 
     return files_query
@@ -142,7 +151,7 @@ def create_variants_query(param_val):
     query_beg = "{files:{$elemMatch:{\"$or\":["
     study_string = ",".join("{sid:\"" + x[0] + "\",fid:\"" + x[1] + "\"}" for x in param_val)
     query_end = "]}}}"
-    variants_query = f"'{query_beg}{study_string}{query_end}'"
+    variants_query = query_beg + study_string + query_end
     logger.info(f"query created for variants collection migration : {variants_query}")
 
     return variants_query
@@ -159,7 +168,7 @@ def create_query_with_ids(ids):
     return query_with_id
 
 
-def variants_export(mongo_source, private_config_xml_file, export_dir, query_file_dir, start_time, end_time):
-    db_study_dict = find_variants_studies_eligible_for_migration(private_config_xml_file, start_time, end_time)
-    mongo_export_files_variants_data(mongo_source, db_study_dict, export_dir)
+def variants_export(mongo_source, export_dir, query_file_dir, start_time, end_time):
+    db_study_dict = find_variants_studies_eligible_for_migration(start_time, end_time)
+    mongo_export_files_variants_data(mongo_source, db_study_dict, export_dir, query_file_dir)
     mongo_export_annotations_data(mongo_source, export_dir, query_file_dir)

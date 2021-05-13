@@ -31,16 +31,21 @@ def import_data(mongo_dest, coll_file_loc, mongoimport_args=None):
 
 def mongo_import_from_dir(mongo_dest, export_dir):
     mongo_args = {
-        "mode": "upsert",
-        "jsonArray": ""
+        "mode": "upsert"
     }
     db_list = os.listdir(export_dir)
 
     for db in db_list:
         invalidate_and_set_db(mongo_dest, db)
-        coll_list = os.listdir(os.path.join(export_dir, db))
-        for coll in coll_list:
-            import_data(mongo_dest, os.path.join(export_dir, db, coll), mongo_args)
+        db_dir = os.path.join(export_dir, db)
+        all_coll_dir = os.listdir(db_dir)
+        for coll in all_coll_dir:
+            logger.info(f'Importing data for db ({db} - collection ({coll})')
+            coll_dir = os.path.join(db_dir, coll)
+            files_list = os.listdir(coll_dir)
+            for file in files_list:
+                mongo_args.update({"collection": coll})
+                import_data(mongo_dest, os.path.join(coll_dir, file), mongo_args)
 
 
 def invalidate_and_set_db(mongo_instance, db):

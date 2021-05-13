@@ -24,9 +24,6 @@ def main():
     parser.add_argument("--mongo-source-secrets-file",
                         help="Full path to the Mongo Source secrets file (ex: /path/to/mongo/source/secret)",
                         required=True)
-    parser.add_argument("--private-config-xml-file",
-                        help="ex: /path/to/eva-maven-settings.xml",
-                        required=True)
     parser.add_argument("--export-dir", help="Top-level directory where all export reside (ex: /path/to/archives)",
                         required=True)
     parser.add_argument("--mongo-dest-uri",
@@ -55,19 +52,13 @@ def main():
     mongo_source = MongoDatabase(uri=args.mongo_source_uri, secrets_file=args.mongo_source_secrets_file)
     mongo_dest = MongoDatabase(uri=args.mongo_dest_uri, secrets_file=args.mongo_dest_secrets_file)
 
-    if not args.end_time:
-        end_time = datetime.now().__str__()
-
-    tasks = args.tasks
-    if not tasks:
-        tasks = all_tasks
+    end_time = args.end_time if args.end_time else datetime.now().__str__()
+    tasks = args.tasks if args.tasks else all_tasks
 
     if 'accession_export' in tasks:
-        accession_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir,
-                         args.start_time, end_time)
+        accession_export(mongo_source, args.export_dir, args.query_file_dir, args.start_time, end_time)
     if 'variant_export' in tasks:
-        variants_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir,
-                        args.start_time, end_time)
+        variants_export(mongo_source, args.export_dir, args.query_file_dir, args.start_time, end_time)
     if 'import' in tasks:
         mongo_import_from_dir(mongo_dest, args.export_dir)
 
