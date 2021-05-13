@@ -11,6 +11,8 @@ from variant_incremental_migration import variants_export
 logger = logging_config.get_logger(__name__)
 logging_config.add_stdout_handler()
 
+all_tasks = ['accession_export', 'variant_export', 'import']
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -40,6 +42,9 @@ def main():
                         help="Studies that were processed before end time will be migrated(ex: \"2021-04-06 12:00:00.000000\") \
                              If not provided current timestamp will be taken by default",
                         required=False)
+    parser.add_argument('--tasks', required=False, type=str, nargs='+',
+                        default=all_tasks, choices=all_tasks,
+                        help='Task or set of tasks to perform during ingestion.')
     parser.add_argument("--query-file-dir",
                         help="Top level directory where all the query files will be created. If not provided, script directory path will be taked by default",
                         required=False)
@@ -53,14 +58,18 @@ def main():
     if not args.end_time:
         end_time = datetime.now().__str__()
 
-    # accession export
-    accession_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir, args.start_time,
-                     end_time)
-    # variants export
-    variants_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir, args.start_time,
-                    end_time)
-    # import all from exported directory
-    mongo_import_from_dir(mongo_dest, args.export_dir)
+    tasks = args.tasks
+    if not tasks:
+        tasks = all_tasks
+
+    if 'accession_export' in tasks:
+        accession_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir,
+                         args.start_time, end_time)
+    if 'variant_export' in tasks:
+        variants_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir,
+                        args.start_time, end_time)
+    if 'import' in tasks:
+        mongo_import_from_dir(mongo_dest, args.export_dir)
 
 
 if __name__ == "__main__":
