@@ -1,5 +1,6 @@
 import json
 import os.path
+from collections import defaultdict
 from itertools import islice
 
 import psycopg2
@@ -41,13 +42,13 @@ def find_variants_studies_eligible_for_migration(migration_start_time, migration
     query_result = get_all_results_for_query(metadata_connection_handle, query_string)
     logger.info(f"\nStudies eligible for migration : {query_result}")
 
-    job_parameter_combine = {}
+    job_parameter_combine = defaultdict(dict)
     for job_id, key_name, key_value, start_time in query_result:
-        job_parameter_combine.setdefault(job_id, {}).update({key_name: key_value})
+        job_parameter_combine[job_id].update({key_name: key_value})
 
-    db_study_dict = {}
+    db_study_dict = defaultdict(set)
     for key, val in job_parameter_combine.items():
-        db_study_dict.setdefault(val[mongodb_key], set()).add((val[study_key], val[vcf_key]))
+        db_study_dict[val[mongodb_key]].add((val[study_key], val[vcf_key]))
 
     return db_study_dict
 

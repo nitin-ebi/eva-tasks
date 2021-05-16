@@ -1,4 +1,5 @@
 import os.path
+from collections import defaultdict
 
 import psycopg2
 import psycopg2.extras
@@ -32,9 +33,9 @@ def find_accession_studies_eligible_for_migration(migration_start_time, migratio
     query_result = get_all_results_for_query(metadata_connection_handle, query_string)
     logger.info(f"\nStudies eligible for migration : {query_result}")
 
-    job_parameter_combine = {}
+    job_parameter_combine = defaultdict(dict)
     for job_id, key_name, key_value, start_time in query_result:
-        job_parameter_combine.setdefault(job_id, {}).update({key_name: key_value})
+        job_parameter_combine[job_id].update({key_name: key_value})
 
     study_seq_tuple_set = set()
     for key, val in job_parameter_combine.items():
