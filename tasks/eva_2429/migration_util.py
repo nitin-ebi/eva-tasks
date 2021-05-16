@@ -64,7 +64,7 @@ def write_query_to_file(query, query_file_dir, file_name):
     try:
         with open(query_file, 'w') as open_file:
             open_file.write(query)
-    except Exception:
+    except IOError:
         logger.error(f"Could not write query to the file: {query_file}")
     else:
         logger.info(f"Query written successfully to file: {query_file}")

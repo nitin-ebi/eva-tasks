@@ -35,7 +35,7 @@ def find_variants_studies_eligible_for_migration(migration_start_time, migration
                         from batch_job_execution bje join batch_job_execution_params bjep \
                         on bje.job_execution_id=bjep.job_execution_id \
                         where bjep.key_name in ('{study_key}', '{vcf_key}', '{mongodb_key}')  \
-                        and bje.start_time > '{migration_start_time}'  and bje.start_time < '{migration_end_time}'\
+                        and bje.start_time between '{migration_start_time}' and '{migration_end_time}'\
                         order by bjep.job_execution_id desc , bjep.key_name"
 
     query_result = get_all_results_for_query(metadata_connection_handle, query_string)
@@ -53,7 +53,7 @@ def find_variants_studies_eligible_for_migration(migration_start_time, migration
 
 
 def mongo_export_files_variants_data(mongo_source, db_study_dict, export_dir, query_dir):
-    logger.info(f"Starting mongo export process for  mongo ({({mongo_source.mongo_handle.address[0]})})")
+    logger.info(f"Starting mongo export process for  mongo ({mongo_source.mongo_handle.address[0]})")
     for db, study_vcf in db_study_dict.items():
         invalidate_and_set_db(mongo_source, db)
         files_query = create_files_query(study_vcf)

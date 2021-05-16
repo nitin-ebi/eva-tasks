@@ -26,7 +26,7 @@ def find_accession_studies_eligible_for_migration(migration_start_time, migratio
                      from batch_job_execution bje join batch_job_execution_params bjep \
                      on bje.job_execution_id=bjep.job_execution_id \
                      where bjep.key_name in ('{project_key}', '{assembly_key}')  \
-                     and bje.start_time > '{migration_start_time}' and bje.start_time < '{migration_end_time}' \
+                     and bje.start_time between '{migration_start_time}' and '{migration_end_time}' \
                      order by bjep.job_execution_id desc , bjep.key_name"
 
     query_result = get_all_results_for_query(metadata_connection_handle, query_string)
