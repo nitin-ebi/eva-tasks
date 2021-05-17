@@ -3,10 +3,10 @@ from collections import defaultdict
 
 import psycopg2
 import psycopg2.extras
+from ebi_eva_common_pyutils.config_utils import get_pg_uri_for_accession_profile
 from ebi_eva_common_pyutils.logger import logging_config
 from ebi_eva_common_pyutils.pg_utils import get_all_results_for_query
 
-from migration_util import export_data
 from migration_util import invalidate_and_set_db
 from migration_util import write_query_to_file
 
@@ -17,12 +17,11 @@ assembly_key = "assemblyAccession"
 accession_query_file_name = "accession_query.txt"
 accession_db = "eva_accession_sharded"
 accession_collection = "submittedVariantEntity"
-pgsql_accession_connection_uri = "postgresql://pgsql-hxvm7-010.ebi.ac.uk:5432/vrnvaraccjtpro"
-pgsql_accession_user = "evaaccjt"
 
 
-def find_accession_studies_eligible_for_migration(migration_start_time, migration_end_time):
-    with psycopg2.connect(pgsql_accession_connection_uri, user=pgsql_accession_user) as metadata_connection_handle:
+def find_accession_studies_eligible_for_migration(private_config_xml_file, migration_start_time, migration_end_time):
+    with psycopg2.connect(get_pg_uri_for_accession_profile("production", private_config_xml_file),
+                          user="evaaccjt") as metadata_connection_handle:
         query_string = f"select bjep.job_execution_id, bjep.key_name, bjep.string_val, bje.start_time \
                      from batch_job_execution bje join batch_job_execution_params bjep \
                      on bje.job_execution_id=bjep.job_execution_id \
@@ -35,7 +34,7 @@ def find_accession_studies_eligible_for_migration(migration_start_time, migratio
 
     job_parameter_combine = defaultdict(dict)
     for job_id, key_name, key_value, start_time in query_result:
-        job_parameter_combine[job_id].update({key_name: key_value})
+        job_parameter_combine[job_id][key_name] = key_value
 
     study_seq_tuple_set = set()
     for key, val in job_parameter_combine.items():
@@ -57,7 +56,7 @@ def export_accession_data(mongo_source, study_seq_tuple_set, export_dir, query_f
         f"Starting mongo export process for accessioning database: mongo_source ({mongo_source.mongo_handle.address[0]}) and mongo_args ({mongo_args})")
     accession_export_file = os.path.join(export_dir, accession_db, accession_collection, accession_collection)
 
-    export_data(mongo_source, accession_export_file, mongo_args)
+    mongo_source.export_data(mongo_source, accession_export_file, mongo_args)
 
 
 def create_accession_query(study_seq_tuple_set):
@@ -71,6 +70,6 @@ def create_accession_query(study_seq_tuple_set):
     return accession_query
 
 
-def accession_export(mongo_source, export_dir, query_file_dir, start_time, end_time):
-    study_seq_set = find_accession_studies_eligible_for_migration(start_time, end_time)
+def accession_export(mongo_source, private_config_xml_file, export_dir, query_file_dir, start_time, end_time):
+    study_seq_set = find_accession_studies_eligible_for_migration(private_config_xml_file, start_time, end_time)
     export_accession_data(mongo_source, study_seq_set, export_dir, query_file_dir)

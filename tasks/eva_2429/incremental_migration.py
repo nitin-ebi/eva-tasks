@@ -32,6 +32,8 @@ def main():
     parser.add_argument("--mongo-dest-secrets-file",
                         help="Full path to the Mongo Destination secrets file (ex: /path/to/mongo/source/secret)",
                         required=True)
+    parser.add_argument("--private-config-xml-file", help="ex: /path/to/eva-maven-settings.xml",
+                        required=True)
     parser.add_argument("--start-time",
                         help="Studies that were processed after start time will be migrated (ex: \"2021-04-06 12:00:00\")",
                         required=True)
@@ -53,9 +55,11 @@ def main():
     mongo_dest = MongoDatabase(uri=args.mongo_dest_uri, secrets_file=args.mongo_dest_secrets_file)
 
     if 'accession_export' in args.tasks:
-        accession_export(mongo_source, args.export_dir, args.query_file_dir, args.start_time, args.end_time)
+        accession_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir,
+                         args.start_time, args.end_time)
     if 'variant_export' in args.tasks:
-        variants_export(mongo_source, args.export_dir, args.query_file_dir, args.start_time, args.end_time)
+        variants_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir,
+                        args.start_time, args.end_time)
     if 'import' in args.tasks:
         mongo_import_from_dir(mongo_dest, args.export_dir)
 

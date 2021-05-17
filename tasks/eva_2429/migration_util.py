@@ -1,32 +1,8 @@
 import os.path
-import subprocess
 
-from ebi_eva_common_pyutils.command_utils import run_command_with_output
 from ebi_eva_common_pyutils.logger import logging_config
 
 logger = logging_config.get_logger(__name__)
-
-
-def export_data(mongo_source, accession_export_directory, mongoexport_args=None):
-    mongoexport_args = " ".join([f"--{arg} {val}"
-                                 for arg, val in mongoexport_args.items()]) if mongoexport_args else ""
-    mongoexport_command = f"mongoexport --uri {mongo_source.uri_with_db_name}  --out {accession_export_directory} {mongoexport_args}" + \
-                          mongo_source._get_optional_secrets_file_stdin()
-    try:
-        run_command_with_output("mongoexport", mongoexport_command, log_error_stream_to_output=True)
-    except subprocess.CalledProcessError as ex:
-        raise Exception("mongoexport failed! HINT: Did you forget to provide a secrets file for authentication?")
-
-
-def import_data(mongo_dest, coll_file_loc, mongoimport_args=None):
-    mongoimport_args = " ".join([f"--{arg} {val}"
-                                 for arg, val in mongoimport_args.items()]) if mongoimport_args else ""
-    mongoimport_command = f"mongoimport --uri {mongo_dest.uri_with_db_name}  --file {coll_file_loc} {mongoimport_args}" + \
-                          mongo_dest._get_optional_secrets_file_stdin()
-    try:
-        run_command_with_output("mongoimport", mongoimport_command, log_error_stream_to_output=True)
-    except subprocess.CalledProcessError as ex:
-        raise Exception("mongoexport failed! HINT: Did you forget to provide a secrets file for authentication?")
 
 
 def mongo_import_from_dir(mongo_dest, export_dir):
@@ -45,7 +21,7 @@ def mongo_import_from_dir(mongo_dest, export_dir):
             files_list = os.listdir(coll_dir)
             for file in files_list:
                 mongo_args.update({"collection": coll})
-                import_data(mongo_dest, os.path.join(coll_dir, file), mongo_args)
+                mongo_dest.import_data(mongo_dest, os.path.join(coll_dir, file), mongo_args)
 
 
 def invalidate_and_set_db(mongo_instance, db):
