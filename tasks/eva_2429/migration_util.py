@@ -22,7 +22,7 @@ def mongo_import_from_dir(mongo_dest_uri, mongo_dest_secrets_file, export_dir):
             files_list = os.listdir(coll_dir)
             for file in files_list:
                 mongo_import_args.update({"collection": coll})
-                mongo_dest.import_data(mongo_dest, os.path.join(coll_dir, file), mongo_import_args)
+                mongo_dest.import_data(os.path.join(coll_dir, file), mongo_import_args)
 
 
 def write_query_to_file(query, query_file_dir, file_name):

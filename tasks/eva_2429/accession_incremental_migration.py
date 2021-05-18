@@ -53,10 +53,10 @@ def export_accession_data(mongo_source_uri, mongo_source_secrets_file, study_seq
     }
 
     logger.info(
-        f"Starting mongo export process for accessioning database: mongo_source ({mongo_source.mongo_handle.address[0]}) and mongo_export_args ({mongo_export_args})")
+        f"Starting mongo export process for accessioning database: mongo_source ({mongo_source_uri}) and mongo_export_args ({mongo_export_args})")
     accession_export_file = os.path.join(export_dir, accession_db, accession_collection, accession_collection)
 
-    mongo_source.export_data(mongo_source, accession_export_file, mongo_export_args)
+    mongo_source.export_data(accession_export_file, mongo_export_args)
 
 
 def create_accession_query(study_seq_tuple_set):

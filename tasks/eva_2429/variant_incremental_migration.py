@@ -65,7 +65,7 @@ def mongo_export_files_variants_data(mongo_source_uri, mongo_source_secrets_file
         logger.info(
             f"Exporting data for database ({db}): collection ({files_collection}) - files_mongo_export_args ({files_mongo_export_args})")
         files_export_file = os.path.join(export_dir, db, files_collection, files_collection)
-        mongo_source.export_data(mongo_source, files_export_file, files_mongo_export_args)
+        mongo_source.export_data(files_export_file, files_mongo_export_args)
 
         variants_query = create_variants_query(study_vcf)
         variants_query_path = write_query_to_file(variants_query, query_dir, variants_query_file_name)
@@ -76,7 +76,7 @@ def mongo_export_files_variants_data(mongo_source_uri, mongo_source_secrets_file
         logger.info(
             f"Exporting data for database ({db}): collection ({variant_collection}) - variants_mongo_export_args ({variants_mongo_export_args})")
         variant_export_file = os.path.join(export_dir, db, variant_collection, variant_collection)
-        mongo_source.export_data(mongo_source, variant_export_file, variants_mongo_export_args)
+        mongo_source.export_data(variant_export_file, variants_mongo_export_args)
 
 
 def mongo_export_annotations_data(mongo_source_uri, mongo_source_secrets_file, export_dir, query_dir):
@@ -114,7 +114,7 @@ def export_annotations_data(mongo_source, db, collection, ids, export_dir, query
     logger.info(
         f"Exporting data for database ({db} and collection ({collection}) - mongo_annot_export_args({mongo_annot_export_args})")
     export_file = os.path.join(export_dir, db, collection, f'{collection}_{chunk_number}')
-    mongo_source.export_data(mongo_source, export_file, mongo_annot_export_args)
+    mongo_source.export_data(export_file, mongo_annot_export_args)
 
 
 def get_annotations_ids(variant_batch):
