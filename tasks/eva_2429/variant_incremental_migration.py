@@ -7,15 +7,15 @@ import psycopg2
 import psycopg2.extras
 from ebi_eva_common_pyutils.config_utils import get_pg_uri_for_variant_profile
 from ebi_eva_common_pyutils.logger import logging_config
+from ebi_eva_common_pyutils.mongodb import MongoDatabase
 from ebi_eva_common_pyutils.pg_utils import get_all_results_for_query
 
-from migration_util import invalidate_and_set_db
 from migration_util import write_query_to_file
 
 logger = logging_config.get_logger(__name__)
 
 study_key = "input.study.id"
-vcf_key = "input.vcf.id"
+analysis_key = "input.vcf.id"
 mongodb_key = 'spring.data.mongodb.database'
 variant_collection = "variants_2_0"
 files_collection = "files_2_0"
@@ -34,7 +34,7 @@ def find_variants_studies_eligible_for_migration(private_config_xml_file, migrat
         query_string = f"select bjep.job_execution_id, bjep.key_name, bjep.string_val, bje.start_time \
                         from batch_job_execution bje join batch_job_execution_params bjep \
                         on bje.job_execution_id=bjep.job_execution_id \
-                        where bjep.key_name in ('{study_key}', '{vcf_key}', '{mongodb_key}')  \
+                        where bjep.key_name in ('{study_key}', '{analysis_key}', '{mongodb_key}')  \
                         and bje.start_time between '{migration_start_time}' and '{migration_end_time}'\
                         order by bjep.job_execution_id desc , bjep.key_name"
 
@@ -47,42 +47,42 @@ def find_variants_studies_eligible_for_migration(private_config_xml_file, migrat
 
     db_study_dict = defaultdict(set)
     for key, val in job_parameter_combine.items():
-        db_study_dict[val[mongodb_key]].add((val[study_key], val[vcf_key]))
+        db_study_dict[val[mongodb_key]].add((val[study_key], val[analysis_key]))
 
     return db_study_dict
 
 
-def mongo_export_files_variants_data(mongo_source, db_study_dict, export_dir, query_dir):
-    logger.info(f"Starting mongo export process for  mongo ({mongo_source.mongo_handle.address[0]})")
+def mongo_export_files_variants_data(mongo_source_uri, mongo_source_secrets_file, db_study_dict, export_dir, query_dir):
+    logger.info(f"Starting mongo export process for  mongo ({mongo_source_uri})")
     for db, study_vcf in db_study_dict.items():
-        invalidate_and_set_db(mongo_source, db)
+        mongo_source = MongoDatabase(uri=mongo_source_uri, secrets_file=mongo_source_secrets_file, db_name=db)
         files_query = create_files_query(study_vcf)
         files_query_path = write_query_to_file(files_query, query_dir, files_query_file_name)
-        files_mongo_args = {
+        files_mongo_export_args = {
             "collection": files_collection,
             "queryFile": files_query_path
         }
         logger.info(
-            f"Exporting data for database ({db}): collection ({files_collection}) - mongo_args ({files_mongo_args})")
+            f"Exporting data for database ({db}): collection ({files_collection}) - files_mongo_export_args ({files_mongo_export_args})")
         files_export_file = os.path.join(export_dir, db, files_collection, files_collection)
-        mongo_source.export_data(mongo_source, files_export_file, files_mongo_args)
+        mongo_source.export_data(mongo_source, files_export_file, files_mongo_export_args)
 
         variants_query = create_variants_query(study_vcf)
         variants_query_path = write_query_to_file(variants_query, query_dir, variants_query_file_name)
-        variants_mongo_args = {
+        variants_mongo_export_args = {
             "collection": variant_collection,
             "queryFile": variants_query_path
         }
         logger.info(
-            f"Exporting data for database ({db}): collection ({variant_collection}) - mongo_args ({variants_mongo_args})")
+            f"Exporting data for database ({db}): collection ({variant_collection}) - variants_mongo_export_args ({variants_mongo_export_args})")
         variant_export_file = os.path.join(export_dir, db, variant_collection, variant_collection)
-        mongo_source.export_data(mongo_source, variant_export_file, variants_mongo_args)
+        mongo_source.export_data(mongo_source, variant_export_file, variants_mongo_export_args)
 
 
-def mongo_export_annotations_data(mongo_source, export_dir, query_dir):
+def mongo_export_annotations_data(mongo_source_uri, mongo_source_secrets_file, export_dir, query_dir):
     db_list = os.listdir(export_dir)
     for db in db_list:
-        invalidate_and_set_db(mongo_source, db)
+        mongo_source = MongoDatabase(uri=mongo_source_uri, secrets_file=mongo_source_secrets_file, db_name=db)
         variant_file_loc = os.path.join(export_dir, db, variant_collection, variant_collection)
         if os.path.isfile(variant_file_loc):
             with open(variant_file_loc, 'r') as variant_file:
@@ -107,14 +107,14 @@ def mongo_export_annotations_data(mongo_source, export_dir, query_dir):
 def export_annotations_data(mongo_source, db, collection, ids, export_dir, query_dir, query_file_name, chunk_number):
     query = create_query_with_ids(ids)
     query_file_path = write_query_to_file(query, query_dir, query_file_name)
-    mongo_annot_args = {
+    mongo_annot_export_args = {
         "collection": collection,
         "queryFile": query_file_path
     }
     logger.info(
-        f"Exporting data for database ({db} and collection ({collection}) - mongo_args({mongo_annot_args})")
+        f"Exporting data for database ({db} and collection ({collection}) - mongo_annot_export_args({mongo_annot_export_args})")
     export_file = os.path.join(export_dir, db, collection, f'{collection}_{chunk_number}')
-    mongo_source.export_data(mongo_source, export_file, mongo_annot_args)
+    mongo_source.export_data(mongo_source, export_file, mongo_annot_export_args)
 
 
 def get_annotations_ids(variant_batch):
@@ -168,7 +168,9 @@ def create_query_with_ids(ids):
     return query_with_id
 
 
-def variants_export(mongo_source, private_config_xml_file, export_dir, query_file_dir, start_time, end_time):
+def variants_export(mongo_source_uri, mongo_source_secrets_file, private_config_xml_file, export_dir, query_file_dir,
+                    start_time, end_time):
     db_study_dict = find_variants_studies_eligible_for_migration(private_config_xml_file, start_time, end_time)
-    mongo_export_files_variants_data(mongo_source, db_study_dict, export_dir, query_file_dir)
-    mongo_export_annotations_data(mongo_source, export_dir, query_file_dir)
+    mongo_export_files_variants_data(mongo_source_uri, mongo_source_secrets_file, db_study_dict, export_dir,
+                                     query_file_dir)
+    mongo_export_annotations_data(mongo_source_uri, mongo_source_secrets_file, export_dir, query_file_dir)

@@ -5,9 +5,9 @@ import psycopg2
 import psycopg2.extras
 from ebi_eva_common_pyutils.config_utils import get_pg_uri_for_accession_profile
 from ebi_eva_common_pyutils.logger import logging_config
+from ebi_eva_common_pyutils.mongodb import MongoDatabase
 from ebi_eva_common_pyutils.pg_utils import get_all_results_for_query
 
-from migration_util import invalidate_and_set_db
 from migration_util import write_query_to_file
 
 logger = logging_config.get_logger(__name__)
@@ -43,20 +43,20 @@ def find_accession_studies_eligible_for_migration(private_config_xml_file, migra
     return study_seq_tuple_set
 
 
-def export_accession_data(mongo_source, study_seq_tuple_set, export_dir, query_file_dir):
-    invalidate_and_set_db(mongo_source, accession_db)
+def export_accession_data(mongo_source_uri, mongo_source_secrets_file, study_seq_tuple_set, export_dir, query_file_dir):
+    mongo_source = MongoDatabase(uri=mongo_source_uri, secrets_file=mongo_source_secrets_file, db_name=accession_db)
     accession_query = create_accession_query(study_seq_tuple_set)
     query_file_path = write_query_to_file(accession_query, query_file_dir, accession_query_file_name)
-    mongo_args = {
+    mongo_export_args = {
         "collection": accession_collection,
         "queryFile": query_file_path
     }
 
     logger.info(
-        f"Starting mongo export process for accessioning database: mongo_source ({mongo_source.mongo_handle.address[0]}) and mongo_args ({mongo_args})")
+        f"Starting mongo export process for accessioning database: mongo_source ({mongo_source.mongo_handle.address[0]}) and mongo_export_args ({mongo_export_args})")
     accession_export_file = os.path.join(export_dir, accession_db, accession_collection, accession_collection)
 
-    mongo_source.export_data(mongo_source, accession_export_file, mongo_args)
+    mongo_source.export_data(mongo_source, accession_export_file, mongo_export_args)
 
 
 def create_accession_query(study_seq_tuple_set):
@@ -70,6 +70,7 @@ def create_accession_query(study_seq_tuple_set):
     return accession_query
 
 
-def accession_export(mongo_source, private_config_xml_file, export_dir, query_file_dir, start_time, end_time):
+def accession_export(mongo_source_uri, mongo_source_secrets_file, private_config_xml_file, export_dir, query_file_dir,
+                     start_time, end_time):
     study_seq_set = find_accession_studies_eligible_for_migration(private_config_xml_file, start_time, end_time)
-    export_accession_data(mongo_source, study_seq_set, export_dir, query_file_dir)
+    export_accession_data(mongo_source_uri, mongo_source_secrets_file, study_seq_set, export_dir, query_file_dir)

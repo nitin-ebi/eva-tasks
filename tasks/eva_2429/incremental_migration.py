@@ -2,7 +2,6 @@ import argparse
 from datetime import datetime
 
 from ebi_eva_common_pyutils.logger import logging_config
-from ebi_eva_common_pyutils.mongodb import MongoDatabase
 
 from accession_incremental_migration import accession_export
 from migration_util import mongo_import_from_dir
@@ -51,17 +50,14 @@ def main():
 
     args = parser.parse_args()
 
-    mongo_source = MongoDatabase(uri=args.mongo_source_uri, secrets_file=args.mongo_source_secrets_file)
-    mongo_dest = MongoDatabase(uri=args.mongo_dest_uri, secrets_file=args.mongo_dest_secrets_file)
-
     if 'accession_export' in args.tasks:
-        accession_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir,
-                         args.start_time, args.end_time)
+        accession_export(args.mongo_source_uri, args.mongo_source_secrets_file, args.private_config_xml_file,
+                         args.export_dir, args.query_file_dir, args.start_time, args.end_time)
     if 'variant_export' in args.tasks:
-        variants_export(mongo_source, args.private_config_xml_file, args.export_dir, args.query_file_dir,
-                        args.start_time, args.end_time)
+        variants_export(args.mongo_source_uri, args.mongo_source_secrets_file, args.private_config_xml_file,
+                        args.export_dir, args.query_file_dir, args.start_time, args.end_time)
     if 'import' in args.tasks:
-        mongo_import_from_dir(mongo_dest, args.export_dir)
+        mongo_import_from_dir(args.mongo_dest_uri, args.mongo_dest_secrets_file, args.export_dir)
 
 
 if __name__ == "__main__":

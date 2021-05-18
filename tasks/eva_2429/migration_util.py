@@ -1,18 +1,19 @@
 import os.path
 
 from ebi_eva_common_pyutils.logger import logging_config
+from ebi_eva_common_pyutils.mongodb import MongoDatabase
 
 logger = logging_config.get_logger(__name__)
 
 
-def mongo_import_from_dir(mongo_dest, export_dir):
-    mongo_args = {
+def mongo_import_from_dir(mongo_dest_uri, mongo_dest_secrets_file, export_dir):
+    mongo_import_args = {
         "mode": "upsert"
     }
     db_list = os.listdir(export_dir)
 
     for db in db_list:
-        invalidate_and_set_db(mongo_dest, db)
+        mongo_dest = MongoDatabase(uri=mongo_dest_uri, secrets_file=mongo_dest_secrets_file, db_name=db)
         db_dir = os.path.join(export_dir, db)
         all_coll_dir = os.listdir(db_dir)
         for coll in all_coll_dir:
@@ -20,14 +21,8 @@ def mongo_import_from_dir(mongo_dest, export_dir):
             coll_dir = os.path.join(db_dir, coll)
             files_list = os.listdir(coll_dir)
             for file in files_list:
-                mongo_args.update({"collection": coll})
-                mongo_dest.import_data(mongo_dest, os.path.join(coll_dir, file), mongo_args)
-
-
-def invalidate_and_set_db(mongo_instance, db):
-    if 'uri_with_db_name' in mongo_instance.__dict__:
-        del mongo_instance.__dict__['uri_with_db_name']
-    mongo_instance.db_name = db
+                mongo_import_args.update({"collection": coll})
+                mongo_dest.import_data(mongo_dest, os.path.join(coll_dir, file), mongo_import_args)
 
 
 def write_query_to_file(query, query_file_dir, file_name):
