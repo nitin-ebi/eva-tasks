@@ -25,7 +25,7 @@ files_query_file_name = "files_query.txt"
 variants_query_file_name = "variants_query.txt"
 annotation_query_file_name = "annotations_query.txt"
 annotation_metadata_query_file_name = "annotations_metadata_query.txt"
-chunk_size = 100
+chunk_size = 1000000
 
 
 def find_variants_studies_eligible_for_migration(private_config_xml_file, migration_start_time, migration_end_time):
