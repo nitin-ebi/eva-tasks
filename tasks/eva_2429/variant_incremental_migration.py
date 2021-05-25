@@ -25,7 +25,7 @@ files_query_file_name = "files_query.txt"
 variants_query_file_name = "variants_query.txt"
 annotation_query_file_name = "annotations_query.txt"
 annotation_metadata_query_file_name = "annotations_metadata_query.txt"
-chunk_size = 1000000
+chunk_size = 1000
 
 
 def find_variants_studies_eligible_for_migration(private_config_xml_file, migration_start_time, migration_end_time):
@@ -109,7 +109,8 @@ def export_annotations_data(mongo_source, db, collection, ids, export_dir, query
     query_file_path = write_query_to_file(query, query_dir, query_file_name)
     mongo_annot_export_args = {
         "collection": collection,
-        "queryFile": query_file_path
+        "queryFile": query_file_path,
+        "readPreference": "secondaryPreferred"
     }
     logger.info(
         f"Exporting data for database ({db} and collection ({collection}) - mongo_annot_export_args({mongo_annot_export_args})")
@@ -129,7 +130,8 @@ def get_annotations_ids(variant_batch):
         else:
             annot_array = variant["annot"]
             for annot in annot_array:
-                annotations_list["annotations_id"].add(json.dumps(f'{variant["_id"]}_{annot["vepv"]}_{annot["cachev"]}')[:-1][1:])
+                annotations_list["annotations_id"].add(
+                    json.dumps(f'{variant["_id"]}_{annot["vepv"]}_{annot["cachev"]}')[:-1][1:])
                 annotations_list["annotations_metadata_id"].add(f'{annot["vepv"]}_{annot["cachev"]}')
 
     return annotations_list
