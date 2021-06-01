@@ -131,7 +131,7 @@ def get_annotations_ids(variant_batch):
             annot_array = variant["annot"]
             for annot in annot_array:
                 annotations_list["annotations_id"].add(
-                    json.dumps(f'{variant["_id"]}_{annot["vepv"]}_{annot["cachev"]}')[:-1][1:])
+                    json.dumps(f'{variant["_id"]}_{annot["vepv"]}_{annot["cachev"]}')[1:-1])
                 annotations_list["annotations_metadata_id"].add(f'{annot["vepv"]}_{annot["cachev"]}')
 
     return annotations_list
