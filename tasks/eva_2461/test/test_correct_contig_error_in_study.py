@@ -51,7 +51,7 @@ class TestCorrectContigErrorInStudy(TestCase):
         fixed = replace_with_correct_contig(self.mongo_source)
         self.assertEqual(fixed, 1)
         variant = (self.mongo_source.mongo_handle[self.db][self.collection].find_one(
-            {'seq': 'GCA_000003025.4', 'accession': 7315407067, 'ref': 'A'}))
+            {'seq': 'GCA_000003025.4', 'accession': 7315407067}))
         self.assertEqual(variant['contig'], self.contig)
         self.assertEqual(variant['_id'], '5F9B885F7A177A38A5AD0D0DEDBD3967F684DD6B')
         variant1 = (self.mongo_source.mongo_handle[self.db][self.collection].find_one(
