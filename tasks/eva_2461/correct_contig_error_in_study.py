@@ -6,6 +6,7 @@ import traceback
 import pymongo
 from ebi_eva_common_pyutils.mongodb import MongoDatabase
 from pymongo import WriteConcern
+from pymongo.read_concern import ReadConcern
 
 
 def get_SHA1(variant_rec):
@@ -20,7 +21,8 @@ def replace_with_correct_contig(mongo_source):
     correct_contig = 'AF034253.1'
     sve_collection = mongo_source.mongo_handle[mongo_source.db_name]["submittedVariantEntity"]
     filter_criteria = {'seq': 'GCA_000003025.4', 'study': 'PRJEB43246', 'contig': 'M'}
-    cursor = sve_collection.find(filter_criteria, no_cursor_timeout=True)
+    cursor = sve_collection.with_options(read_concern=ReadConcern("majority")) \
+        .find(filter_criteria, no_cursor_timeout=True)
     insert_statements = []
     drop_statements = []
     number_of_variants_to_replace = 10
