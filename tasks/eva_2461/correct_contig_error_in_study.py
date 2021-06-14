@@ -5,6 +5,7 @@ import traceback
 
 import pymongo
 from ebi_eva_common_pyutils.mongodb import MongoDatabase
+from pymongo import WriteConcern
 
 
 def get_SHA1(variant_rec):
@@ -19,7 +20,7 @@ def replace_with_correct_contig(mongo_source):
     correct_contig = 'AF034253.1'
     sve_collection = mongo_source.mongo_handle[mongo_source.db_name]["submittedVariantEntity"]
     filter_criteria = {'seq': 'GCA_000003025.4', 'study': 'PRJEB43246', 'contig': 'M'}
-    cursor = sve_collection.find(filter_criteria)
+    cursor = sve_collection.find(filter_criteria, no_cursor_timeout=True)
     insert_statements = []
     drop_statements = []
     number_of_variants_to_replace = 10
@@ -33,9 +34,13 @@ def replace_with_correct_contig(mongo_source):
             variant['_id'] = get_SHA1(variant)
             insert_statements.append(pymongo.InsertOne(variant))
             drop_statements.append(pymongo.DeleteOne({'_id': original_id}))
-        result_insert = sve_collection.bulk_write(requests=insert_statements, ordered=False)
+        result_insert = sve_collection.with_options(
+            write_concern=WriteConcern(w="majority", wtimeout=1200000)) \
+            .bulk_write(requests=insert_statements, ordered=False)
         total_inserted += result_insert.inserted_count
-        result_drop = sve_collection.bulk_write(requests=drop_statements, ordered=False)
+        result_drop = sve_collection.with_options(
+            write_concern=WriteConcern(w="majority", wtimeout=1200000)) \
+            .bulk_write(requests=drop_statements, ordered=False)
         total_dropped += result_drop.deleted_count
         logging.info('%s / %s new documents inserted' % (total_inserted, number_of_variants_to_replace))
         logging.info('%s / %s old documents dropped' % (total_dropped, number_of_variants_to_replace))
