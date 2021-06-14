@@ -34,12 +34,10 @@ def replace_with_correct_contig(mongo_source):
             variant['_id'] = get_SHA1(variant)
             insert_statements.append(pymongo.InsertOne(variant))
             drop_statements.append(pymongo.DeleteOne({'_id': original_id}))
-        result_insert = sve_collection.with_options(
-            write_concern=WriteConcern(w="majority", wtimeout=1200000)) \
+        result_insert = sve_collection.with_options(write_concern=WriteConcern(w="majority", wtimeout=1200000)) \
             .bulk_write(requests=insert_statements, ordered=False)
         total_inserted += result_insert.inserted_count
-        result_drop = sve_collection.with_options(
-            write_concern=WriteConcern(w="majority", wtimeout=1200000)) \
+        result_drop = sve_collection.with_options(write_concern=WriteConcern(w="majority", wtimeout=1200000)) \
             .bulk_write(requests=drop_statements, ordered=False)
         total_dropped += result_drop.deleted_count
         logging.info('%s / %s new documents inserted' % (total_inserted, number_of_variants_to_replace))
