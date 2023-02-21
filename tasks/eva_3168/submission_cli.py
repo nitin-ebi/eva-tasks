@@ -23,7 +23,39 @@ def check_if_file_missing(mapping_file):
     return files_missing
 
 
-def check_docker(docker):
+def run_command_with_output(command_description, command, return_process_output=False,
+                            log_error_stream_to_output=False):
+    process_output = ""
+
+    logging.info("Starting process: " + command_description)
+    logging.info("Running command: " + command)
+
+    stdout = subprocess.PIPE
+    # Some utilities like mongodump and mongorestore output non-error messages to error stream
+    # This is a workaround for that
+    stderr = subprocess.STDOUT if log_error_stream_to_output else subprocess.PIPE
+
+    with subprocess.Popen(command, stdout=stdout, stderr=stderr, bufsize=1, universal_newlines=True,
+                          shell=True) as process:
+        for line in iter(process.stdout.readline, ''):
+            line = str(line).rstrip()
+            logging.info(line)
+            if return_process_output:
+                process_output += line + "\n"
+        if not log_error_stream_to_output:
+            for line in iter(process.stderr.readline, ''):
+                line = str(line).rstrip()
+                logging.error(line)
+    if process.returncode != 0:
+        logging.error(command_description + " failed! Refer to the error messages for details.")
+        raise subprocess.CalledProcessError(process.returncode, process.args)
+    else:
+        logging.info(command_description + " - completed successfully")
+    if return_process_output:
+        return process_output
+
+
+def verify_docker(docker):
     docker_exist_cmd = subprocess.run([docker, '--version'])
     if docker_exist_cmd.returncode != 0:
         raise RuntimeError("Please make sure docker is installed and available on the path")
@@ -53,22 +85,35 @@ if __name__ == "__main__":
         raise RuntimeError('some files (vcf/fasta) mentioned in metadata file could not be found')
 
     # check if docker container is ready for running validation
-    # check_docker(docker)
+    # verify_docker(docker)
 
-    # copy mapping file to container validation dir
-    subprocess.run([docker, "exec", container_name, "mkdir", "-p", f"{container_validation_dir}/{mapping_file.parent}"])
-    subprocess.run([docker, 'cp', mapping_file, f"{container_name}:{container_validation_dir}/{mapping_file}"])
+    try:
+        run_command_with_output("Removing existing files from validation directory in container",
+                                "{0} exec {1} rm -rf {2}".format(docker, container_name, container_validation_dir))
 
-    # create the directory structure in container and copy all vcf files in container
-    with open(mapping_file) as open_file:
-        reader = csv.DictReader(open_file, delimiter=',')
-        for row in reader:
-            subprocess.run([docker, "exec", container_name, "mkdir", "-p",
-                            f"{container_validation_dir}/{Path(row['vcf']).parent}"])
-            subprocess.run([docker, "cp", row['vcf'], f"{container_name}:{container_validation_dir}/{row['vcf']}"])
+        run_command_with_output("Creating directory structure for copying vcf metadata file in container",
+                                "{0} exec {1} mkdir -p {2}".format(docker, container_name,
+                                                                   f"{container_validation_dir}/{mapping_file.parent}"))
+        run_command_with_output("Copying vcf metadata file into container",
+                                "{0} cp {1} {2}".format(docker, mapping_file,
+                                                        f"{container_name}:{container_validation_dir}/{mapping_file}"))
+        with open(mapping_file) as open_file:
+            reader = csv.DictReader(open_file, delimiter=',')
+            for row in reader:
+                run_command_with_output("Creating directory structure for copying vcf files in container",
+                                        "{0} exec {1} mkdir -p {2}".format(docker, container_name,
+                                                                           f"{container_validation_dir}/{Path(row['vcf']).parent}"))
+                run_command_with_output("Copying vcf files into container",
+                                        "{0} cp {1} {2}".format(docker, row['vcf'],
+                                                                f"{container_name}:{container_validation_dir}/{row['vcf']}"))
 
-    # run validation in container
-    subprocess.run([docker, 'exec', container_name, 'nextflow', 'run', 'validation.nf',
-                    "--vcf_files_mapping", f"{container_validation_dir}/{mapping_file}",
-                    "--output_dir", f"{container_validation_output_dir}"])
+        run_command_with_output("Running Validation - Nextflow",
+                                "{0} exec {1} nextflow run validation.nf --vcf_files_mapping {2} --output_dir {3}"
+                                .format(docker, container_name, f"{container_validation_dir}/{mapping_file}",
+                                        container_validation_output_dir))
 
+        run_command_with_output("Copying validation output from container to host",
+                                "{0} cp {1} {2}".format(docker, f"{container_name}:{container_validation_output_dir}",
+                                                        output_dir))
+    except subprocess.CalledProcessError as ex:
+        logging.error(ex)

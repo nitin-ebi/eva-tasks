@@ -36,7 +36,7 @@ if (!params.vcf_files_mapping || !params.output_dir) {
 // vcf files are used multiple times
 Channel.fromPath(params.vcf_files_mapping)
     .splitCsv(header:true)
-    .map{row -> tuple(file(row.vcf), file(row.fasta), file(row.report))}
+    .map{row -> tuple(file(params.container_validation_dir+row.vcf), file(params.container_validation_dir+row.fasta), file(params.container_validation_dir+row.report))}
     .into{vcf_channel1; vcf_channel2}
 
 /*
@@ -62,7 +62,7 @@ process check_vcf_valid {
     trap 'if [[ \$? == 1 ]]; then exit 0; fi' EXIT
 
     mkdir -p vcf_format
-    $params.executable.vcf_validator -i $params.container_validation_dir/$vcf -r database,text -o vcf_format --require-evidence > vcf_format/${vcf}.vcf_format.log 2>&1
+    $params.executable.vcf_validator -i $vcf -r database,text -o vcf_format --require-evidence > vcf_format/${vcf}.vcf_format.log 2>&1
     """
 }
 
@@ -90,6 +90,6 @@ process check_vcf_reference {
     trap 'if [[ \$? == 1 || \$? == 139 ]]; then exit 0; fi' EXIT
 
     mkdir -p assembly_check
-    $params.executable.vcf_assembly_checker -i $params.container_validation_dir/$vcf -f $params.container_validation_dir/$fasta -a $params.container_validation_dir/$report -r summary,text,valid  -o assembly_check --require-genbank > assembly_check/${vcf}.assembly_check.log 2>&1
+    $params.executable.vcf_assembly_checker -i $vcf -f $fasta -a $report -r summary,text,valid  -o assembly_check --require-genbank > assembly_check/${vcf}.assembly_check.log 2>&1
     """
 }
