@@ -54,31 +54,26 @@ if (!options) {
     System.exit(1)
 }
 
-new BothSVEHasValidRSInvestigation(options.envPropertiesFile, options.summaryFilePath).investigate()
+new BothSVEHasValidRSRemediation(options.envPropertiesFile, options.summaryFilePath).remediate()
 
-class BothSVEHasValidRSInvestigation {
+class BothSVEHasValidRSRemediation {
     private EVADatabaseEnvironment dbEnv
     private String summaryFilePath
     private Function<ISubmittedVariant, String> hashingFunction
-    static def logger = LoggerFactory.getLogger(BothSVEHasValidRSInvestigation.class)
+    static def logger = LoggerFactory.getLogger(BothSVEHasValidRSRemediation.class)
     private Gson gson
 
-    BothSVEHasValidRSInvestigation(envPropertiesFile, summaryFilePath) {
+    BothSVEHasValidRSRemediation(envPropertiesFile, summaryFilePath) {
         this.dbEnv = createFromSpringContext(envPropertiesFile, Application.class)
         this.summaryFilePath = summaryFilePath
         this.hashingFunction = new SubmittedVariantSummaryFunction().andThen(new SHA1HashingFunction())
         this.gson = new Gson()
     }
 
-    void investigate() {
+    void remediate() {
         // read collision details from summary file
         List<BothRSValidCollision> bothRSValidCollisionList
         try (BufferedReader br = new BufferedReader(new FileReader(this.summaryFilePath))) {
-            // assembly,
-            // sve_in_file, file_accession, file_rs, file_rs_valid, file_remapped_from,
-            // sve_in_db,   db_accession,   db_rs,    db_rs_valid,   db_remapped_from,
-            // file_ref, file_alt, db_ref,  db_alt,
-            // category
             List<String> lines = br.readLines()
             // read only those collisions where both sve has valid rs
             bothRSValidCollisionList = lines.stream()
@@ -92,7 +87,7 @@ class BothSVEHasValidRSInvestigation {
         Map<Long, ClusteredVariantEntity> mapOfAccessionAndCVE = getMapOfAccessionAndCVE(bothRSValidCollisionList)
 
         // Remediate the case where both SVE has valid RS.
-        // Even though both the RS are valid/exist, they different start and only one of start matches with start in SVE
+        // Even though both the RS are valid/exist, they have different start and only one of start matches with start in SVE
         // Keep the SVE with RS whose start matches with start of the SVE (remediate if necessary)
         // deprecate the SVE with RS whose start does not match with start of the SVE
         List<SubmittedVariantEntity> sveInsertList = new ArrayList<>()
@@ -103,27 +98,25 @@ class BothSVEHasValidRSInvestigation {
             ClusteredVariantEntity fileRS = mapOfAccessionAndCVE.get(fileSVE.getClusteredVariantAccession())
             ClusteredVariantEntity dbRS = mapOfAccessionAndCVE.get(dbSVE.getClusteredVariantAccession())
 
-            // check the SVE has the same start as RS
-            if (fileSVE.getReferenceSequenceAccession() == dbSVE.getReferenceSequenceAccession() && fileSVE.getStart() == dbSVE.getStart()) {
-                Long sveStart = fileSVE.getStart()
-                if (sveStart == fileRS.getStart() && sveStart == dbRS.getStart()) {
-                    logger.info("SVE_START_MATCHES_WITH_BOTH_RS")
-                    continue
-                } else if (sveStart == fileRS.getStart() || sveStart == dbRS.getStart()) {
-                    logger.info(sveStart == fileRS.getStart() ? "SVE_START_MATCHES_WITH_FILE_RS" : "SVE_START_MATCHES_WITH_DB_RS")
-                    // assume fileSVE has the RS with correct start and needs to be kept
-                    SubmittedVariantEntity sveToKeep = fileSVE
-                    SubmittedVariantEntity sveToDeprecate = dbSVE
-                    if (sveStart == dbRS.getStart()) {
-                        sveToKeep = dbSVE
-                        sveToDeprecate = fileSVE
-                    }
-                    sveInsertList.add(sveToKeep)
-                    sveDeprecateList.add(sveToDeprecate)
-                } else {
-                    logger.info("SVE_START_MATCHES_WITH_NONE_RS")
-                    continue
+            // both SVE has same start, we can take it from any
+            Long sveStart = fileSVE.getStart()
+            if (sveStart == fileRS.getStart() && sveStart == dbRS.getStart()) {
+                logger.info("SVE_START_MATCHES_WITH_BOTH_RS")
+                continue
+            } else if (sveStart == fileRS.getStart() || sveStart == dbRS.getStart()) {
+                logger.info(sveStart == fileRS.getStart() ? "SVE_START_MATCHES_WITH_FILE_RS" : "SVE_START_MATCHES_WITH_DB_RS")
+                // assume fileSVE has the RS with correct start and needs to be kept
+                SubmittedVariantEntity sveToKeep = fileSVE
+                SubmittedVariantEntity sveToDeprecate = dbSVE
+                if (sveStart == dbRS.getStart()) {
+                    sveToKeep = dbSVE
+                    sveToDeprecate = fileSVE
                 }
+                sveInsertList.add(sveToKeep)
+                sveDeprecateList.add(sveToDeprecate)
+            } else {
+                logger.info("SVE_START_MATCHES_WITH_NONE_RS")
+                continue
             }
         }
 
@@ -131,15 +124,15 @@ class BothSVEHasValidRSInvestigation {
         logger.info("List of SVE to deprecate: " + gson.toJson(sveDeprecateList))
         deprecateSVE(sveDeprecateList)
 
-        // insert SVE with new hash
+        // insert SVE with new hash (after remediation)
         insertSVEWithNewHash(sveInsertList, dbsnpSveClass)
-        // insert update operatons
+        // insert update operatons (for remediation done)
         insertSVOEUpdateOp(sveInsertList, dbsnpSvoeClass)
-        // remove existing sve with
+        // remove existing sve (with lowercase nucleotide)
         logger.info("List of SVE to remove: " + gson.toJson(sveInsertList))
         removeImpactedSVE(sveInsertList, dbsnpSveClass)
 
-        // update existing SVOE
+        // update existing SVOE where a lowercase nucleotide was involved
         Map<String, String> mapOldHashNewHash = sveInsertList.stream()
                 .collect(Collectors.toMap(sve -> sve.getHashedMessage(), sve -> getSVENewHash(sve)))
         updateExistingSVOE(sveInsertList, mapOldHashNewHash, dbsnpSvoeClass)
@@ -230,8 +223,7 @@ class BothSVEHasValidRSInvestigation {
     void insertSVOEUpdateOp(List<SubmittedVariantEntity> sveList, Class ssClass) {
         def sveUpdateOpList = new ArrayList<>()
         for (SubmittedVariantEntity sve : sveList) {
-            def updateOpToWrite = ssClass.equals(sveClass)
-                    ? new SubmittedVariantOperationEntity() : new DbsnpSubmittedVariantOperationEntity()
+            def updateOpToWrite = ssClass.equals(sveClass) ? new SubmittedVariantOperationEntity() : new DbsnpSubmittedVariantOperationEntity()
             updateOpToWrite.fill(EventType.UPDATED, sve.getAccession(), null,
                     "EVA3472 - SS updated with upper case ref, alt and a new hash",
                     Arrays<SubmittedVariantInactiveEntity>.asList(new SubmittedVariantInactiveEntity(sve)).asList())
@@ -272,89 +264,35 @@ class BothSVEHasValidRSInvestigation {
                 .and("eventType").is("UPDATED")
                 .and("inactiveObjects.hashedMessage").in(impactedSVEIds)
                 .and("_id").not().regex("^EVA3472_UPDATED_")
-        new RetryableBatchingCursor<SubmittedVariantOperationEntity>(filterCriteria, dbEnv.mongoTemplate, ssClass).each {
-            sveOperationBatchList ->
-                {
-                    logger.info("Existing SVOE operations to update: " + gson.toJson(sveOperationBatchList))
+        new RetryableBatchingCursor<SubmittedVariantOperationEntity>(filterCriteria, dbEnv.mongoTemplate, ssClass).each { sveOperationBatchList ->
+            {
+                logger.info("Existing SVOE operations to update: " + gson.toJson(sveOperationBatchList))
 
-                    def svoeBulkUpdates = dbEnv.mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ssClass)
+                def svoeBulkUpdates = dbEnv.mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ssClass)
 
-                    for (SubmittedVariantOperationEntity svoe : sveOperationBatchList) {
-                        // create update statement
-                        SubmittedVariantInactiveEntity inactiveSVEDocument = svoe.getInactiveObjects()[0]
-                        String oldHash = inactiveSVEDocument.getHashedMessage()
-                        String newRef = inactiveSVEDocument.getReferenceAllele().toUpperCase()
-                        String newAlt = inactiveSVEDocument.getAlternateAllele().toUpperCase()
-                        String newHash = mapOldHashNewHash.get(oldHash)
+                for (SubmittedVariantOperationEntity svoe : sveOperationBatchList) {
+                    // create update statement
+                    SubmittedVariantInactiveEntity inactiveSVEDocument = svoe.getInactiveObjects()[0]
+                    String oldHash = inactiveSVEDocument.getHashedMessage()
+                    String newRef = inactiveSVEDocument.getReferenceAllele().toUpperCase()
+                    String newAlt = inactiveSVEDocument.getAlternateAllele().toUpperCase()
+                    String newHash = mapOldHashNewHash.get(oldHash)
 
-                        Query findQuery = query(where("_id").is(svoe.getId()).and("inactiveObjects.hashedMessage").is(oldHash))
-                        Update updateQuery = new Update()
-                                .set("inactiveObjects.\$.ref", newRef)
-                                .set("inactiveObjects.\$.alt", newAlt)
-                                .set("inactiveObjects.\$.hashedMessage", newHash)
+                    Query findQuery = query(where("_id").is(svoe.getId()).and("inactiveObjects.hashedMessage").is(oldHash))
+                    Update updateQuery = new Update()
+                            .set("inactiveObjects.\$.ref", newRef)
+                            .set("inactiveObjects.\$.alt", newAlt)
+                            .set("inactiveObjects.\$.hashedMessage", newHash)
 
-                        svoeBulkUpdates.updateOne(findQuery, updateQuery)
-                    }
-
-                    //execute all bulk updates
-                    svoeBulkUpdates.execute()
-                }
-        }
-    }
-
-    void caseBothRShasDifferentStartAndOnlyOneMatchesWithSVEStart(List<BothRSValidCollision> bothRSValidCollisionList, Map<String,
-            SubmittedVariantEntity> mapOfHashAndSVE, Map<Long, ClusteredVariantEntity> mapOfAccessionAndCVE) {
-
-        List<String> resultToPublish = new ArrayList<>()
-
-        for (BothRSValidCollision collision : bothRSValidCollisionList) {
-            SubmittedVariantEntity fileSVE = mapOfHashAndSVE.get(collision.getSveInFile())
-            SubmittedVariantEntity dbSVE = mapOfHashAndSVE.get(collision.getSveInDB())
-            ClusteredVariantEntity fileRS = mapOfAccessionAndCVE.get(collision.getFileRS())
-            ClusteredVariantEntity dbRS = mapOfAccessionAndCVE.get(collision.getDbRS())
-
-            // check the SVE has the same start as RS
-            if (fileSVE.getReferenceSequenceAccession() == dbSVE.getReferenceSequenceAccession() && fileSVE.getStart() == dbSVE.getStart()) {
-                Long sveStart = fileSVE.getStart()
-
-                // check SVE start matches with RS start
-                String startMatch
-                if (sveStart == fileRS.getStart() && sveStart == dbRS.getStart()) {
-                    startMatch = "SVE_START_MATCHES_WITH_BOTH_RS"
-                } else if (sveStart == fileRS.getStart() || sveStart == dbRS.getStart()) {
-                    startMatch = sveStart == fileRS.getStart() ? "SVE_START_MATCHES_WITH_FILE_RS" : "SVE_START_MATCHES_WITH_DB_RS"
-                } else {
-                    startMatch = "SVE_START_MATCHES_WITH_NONE_RS"
+                    svoeBulkUpdates.updateOne(findQuery, updateQuery)
                 }
 
-                resultToPublish.add(String.format("%s," + "%s,%s," + "%s,%s," + "%s,%s,%s,%s," + "%s,%s,%s,%s",
-                        fileSVE.getReferenceSequenceAccession(),
-                        fileSVE.getHashedMessage(), dbSVE.getHashedMessage(),
-                        fileRS.getAccession(), dbRS.getAccession(),
-                        fileSVE.getStart(), fileRS.getStart(), dbRS.getStart(), startMatch,
-                        fileSVE.getReferenceAllele(), fileSVE.getAlternateAllele(), dbSVE.getReferenceAllele(), dbSVE.getAlternateAllele()))
-            }
-            writeResToFile(resultToPublish)
-        }
-    }
-
-    void writeResToFile(List<String> resultToPublish) {
-        String investigationResultFile = "/home/nkumar2/Desktop/investigation_result.csv"
-        try (BufferedWriter br = new BufferedWriter(new FileWriter(new File(investigationResultFile)))) {
-            String[] header = new String[]{"assembly",
-                    "sve_in_file", "sve_in_db",
-                    "file_rs", "db_rs",
-                    "sve_start", "file_rs_start", "db_rs_start", "start_result",
-                    "file_ref", "file_alt", "db_ref", "db_alt"}
-            br.write(header.join(","))
-            br.write("\n")
-
-            for (String line : resultToPublish) {
-                br.write(line)
-                br.write("\n")
+                //execute all bulk updates
+                svoeBulkUpdates.execute()
             }
         }
     }
+
 
     Map<String, SubmittedVariantEntity> getMapOfHashAndSVE(List<BothRSValidCollision> bothRSValidCollisionsList) {
         Set<String> allSVEIds = new HashSet<>()
