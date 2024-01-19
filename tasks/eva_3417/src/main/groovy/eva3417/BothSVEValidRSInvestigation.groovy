@@ -40,6 +40,7 @@ import java.time.LocalDateTime
 import java.util.function.Function
 import java.util.stream.Collectors
 
+import static org.junit.Assert.assertEquals
 import static org.springframework.data.mongodb.core.query.Criteria.where
 import static org.springframework.data.mongodb.core.query.Query.query
 import static uk.ac.ebi.eva.groovy.commons.EVADatabaseEnvironment.*
@@ -95,26 +96,28 @@ class BothSVEHasValidRSRemediation {
         for (BothRSValidCollision collision : bothRSValidCollisionList) {
             SubmittedVariantEntity fileSVE = mapOfHashAndSVE.get(collision.getSveInFile())
             SubmittedVariantEntity dbSVE = mapOfHashAndSVE.get(collision.getSveInDB())
-            ClusteredVariantEntity fileRS = mapOfAccessionAndCVE.get(fileSVE.getClusteredVariantAccession())
-            ClusteredVariantEntity dbRS = mapOfAccessionAndCVE.get(dbSVE.getClusteredVariantAccession())
+            ClusteredVariantEntity fileCVE = mapOfAccessionAndCVE.get(fileSVE.getClusteredVariantAccession())
+            ClusteredVariantEntity dbCVE = mapOfAccessionAndCVE.get(dbSVE.getClusteredVariantAccession())
 
             // both SVE has same start, we can take it from any
             Long sveStart = fileSVE.getStart()
-            if (sveStart == fileRS.getStart() && sveStart == dbRS.getStart()) {
+            if (sveStart == fileCVE.getStart() && sveStart == dbCVE.getStart()) {
+                // Could not find this case in investigation, but logging this check just in case
                 logger.info("SVE_START_MATCHES_WITH_BOTH_RS")
                 continue
-            } else if (sveStart == fileRS.getStart() || sveStart == dbRS.getStart()) {
-                logger.info(sveStart == fileRS.getStart() ? "SVE_START_MATCHES_WITH_FILE_RS" : "SVE_START_MATCHES_WITH_DB_RS")
+            } else if (sveStart == fileCVE.getStart() || sveStart == dbCVE.getStart()) {
+                logger.info(sveStart == fileCVE.getStart() ? "SVE_START_MATCHES_WITH_FILE_RS" : "SVE_START_MATCHES_WITH_DB_RS")
                 // assume fileSVE has the RS with correct start and needs to be kept
                 SubmittedVariantEntity sveToKeep = fileSVE
                 SubmittedVariantEntity sveToDeprecate = dbSVE
-                if (sveStart == dbRS.getStart()) {
+                if (sveStart == dbCVE.getStart()) {
                     sveToKeep = dbSVE
                     sveToDeprecate = fileSVE
                 }
                 sveInsertList.add(sveToKeep)
                 sveDeprecateList.add(sveToDeprecate)
             } else {
+                // Could not find this case in investigation, but logging this check just in case
                 logger.info("SVE_START_MATCHES_WITH_NONE_RS")
                 continue
             }
@@ -331,7 +334,13 @@ class BothSVEHasValidRSRemediation {
     }
 
     List<SubmittedVariantEntity> getAllSVEByHash(Set<String> sveIdList) {
-        List<SubmittedVariantEntity> allSVEInvolved = [sveClass, dbsnpSveClass]
+        List<SubmittedVariantEntity> sveList = [sveClass]
+                .collectMany(ssClass -> dbEnv.mongoTemplate.find(query(where("_id").in(sveIdList)), ssClass))
+                .flatten()
+        // In investigation we found that all the SVE involved are in dbsnp, checking it here for confirmation
+        assertEquals(0, sveList.size())
+
+        List<SubmittedVariantEntity> allSVEInvolved = [dbsnpSveClass]
                 .collectMany(ssClass -> dbEnv.mongoTemplate.find(query(where("_id").in(sveIdList)), ssClass))
                 .flatten()
 
