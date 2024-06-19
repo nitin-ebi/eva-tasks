@@ -19,6 +19,6 @@ if (!options) {
 // this is equivalent to if __name__ == '__main__' in Python
 if (this.getClass().getName().equals('eva3589.eva3589_restore_from_backup')) {
     def devEnv = createFromSpringContext(options.devPropertiesFile, GenericApplication.class)
-    new TestDataset(options.assemblyAccession, devEnv).restoreDevCollectionsFromBackup()
+    new TestDataset(devEnv).restoreDevCollectionsFromBackup()
 }
 

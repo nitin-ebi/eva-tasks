@@ -20,8 +20,8 @@ class TestDataset {
 
     TestDataset() {}
 
-    TestDataset(String assembly, EVADatabaseEnvironment devEnv) {
-        this.assembly = assembly
+    TestDataset(EVADatabaseEnvironment devEnv) {
+        this.assembly = null
         this.prodEnv = null
         this.devEnv = devEnv
     }
@@ -84,7 +84,7 @@ class TestDataset {
                 logger.info("Backing up ${collectionName}")
                 devEnv.mongoTemplate.getCollection(collectionName).aggregate(
                         Collections.singletonList(new Document("\$out",
-                                "${collectionName}_${backupSuffix}".toString()))).allowDiskUse(true).size()
+                                "${collectionName}${backupSuffix}".toString()))).allowDiskUse(true).size()
             }
         }
     }
