@@ -30,24 +30,29 @@ class CorrectSSOperationFromEVA3399 {
             RetryableBatchingCursor cursor = new RetryableBatchingCursor<>(
                     where("_id").regex('^EVA3399_'),
                     prodEnv.mongoTemplate, collectionClass)
-            def bulkOps = prodEnv.mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionClass.class)
-
+            def bulkOps = prodEnv.mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionClass)
+            boolean needsUpdate = false
             cursor.each { List<SubmittedVariantOperationEntity> svoes ->
                 numRecordsProcessed += svoes.size()
                 // Only keep the one that have not been modified already
                 def svoesToUpdate = svoes.findAll { !it.reason.startsWith("Original ") }
                 svoesToUpdate.each {
                     String originalClusteredVariant = it.getInactiveObjects().get(0).getClusteredVariantAccession()
-                    String newReason = "Original rs" + originalClusteredVariant + " associated with SS was merged into new rs."
+                    String newReason = "Original rs" + originalClusteredVariant + " associated with SS was merged into new rs." + it.reason
                     bulkOps.updateOne(query(where("_id").is(it.getId())), new Update().set('reason', newReason))
+                    needsUpdate = true;
                 }
+            }
+            def modifiedCount = 0
+            if (needsUpdate){
+                def bulkResult = bulkOps.execute()
+                if (bulkResult.modifiedCountAvailable && bulkResult.modifiedCount > 0) {
+                    modifiedCount = bulkResult.modifiedCount
+                    numRecordsUpdated += modifiedCount
+                }
+            }
+            logger.info("Updated ${modifiedCount} SubmittedVariantOperationEntity, Total Processed ${numRecordsProcessed}, Updated ${numRecordsUpdated}")
 
-            }
-            def bulkResult = bulkOps.execute()
-            if (bulkResult.modifiedCountAvailable && bulkResult.modifiedCount > 0) {
-                numRecordsUpdated += bulkResult.modifiedCount
-                logger.info("Updated ${bulkResult.modifiedCount} SubmittedVariantOperationEntity, Total Processed ${numRecordsProcessed}, Updated ${numRecordsUpdated}")
-            }
         }
     }
 }
