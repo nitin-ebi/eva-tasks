@@ -28,7 +28,7 @@ class CorrectSSOperationFromEVA3399 {
         def numRecordsUpdated = 0
         [svoeClass, dbsnpSvoeClass].each { collectionClass ->
             RetryableBatchingCursor cursor = new RetryableBatchingCursor<>(
-                    where("_id").regex('^EVA3399_'),
+                    where("_id").regex('^EVA3399_UPD_'),
                     prodEnv.mongoTemplate, collectionClass)
             def bulkOps = prodEnv.mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionClass)
             boolean needsUpdate = false
@@ -38,7 +38,7 @@ class CorrectSSOperationFromEVA3399 {
                 def svoesToUpdate = svoes.findAll { !it.reason.startsWith("Original ") }
                 svoesToUpdate.each {
                     String originalClusteredVariant = it.getInactiveObjects().get(0).getClusteredVariantAccession()
-                    String newReason = "Original rs" + originalClusteredVariant + " associated with SS was merged into new rs." + it.reason
+                    String newReason = "Original rs" + originalClusteredVariant + " associated with SS was merged into new rs. " + it.reason
                     bulkOps.updateOne(query(where("_id").is(it.getId())), new Update().set('reason', newReason))
                     needsUpdate = true;
                 }
