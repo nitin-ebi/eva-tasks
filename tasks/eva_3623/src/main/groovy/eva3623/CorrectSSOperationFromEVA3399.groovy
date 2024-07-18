@@ -42,17 +42,17 @@ class CorrectSSOperationFromEVA3399 {
                     bulkOps.updateOne(query(where("_id").is(it.getId())), new Update().set('reason', newReason))
                     needsUpdate = true;
                 }
-            }
-            def modifiedCount = 0
-            if (needsUpdate){
-                def bulkResult = bulkOps.execute()
-                if (bulkResult.modifiedCountAvailable && bulkResult.modifiedCount > 0) {
-                    modifiedCount = bulkResult.modifiedCount
-                    numRecordsUpdated += modifiedCount
-                }
-            }
-            logger.info("Updated ${modifiedCount} SubmittedVariantOperationEntity, Total Processed ${numRecordsProcessed}, Updated ${numRecordsUpdated}")
 
+                def modifiedCount = 0
+                if (needsUpdate) {
+                    def bulkResult = bulkOps.execute()
+                    if (bulkResult.modifiedCountAvailable && bulkResult.modifiedCount > 0) {
+                        modifiedCount = bulkResult.modifiedCount
+                        numRecordsUpdated += modifiedCount
+                    }
+                }
+                logger.info("Updated ${modifiedCount} SubmittedVariantOperationEntity, Total Processed ${numRecordsProcessed}, Updated ${numRecordsUpdated}")
+            }
         }
     }
 }
