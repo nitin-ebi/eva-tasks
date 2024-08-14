@@ -9,10 +9,8 @@ from ebi_eva_internal_pyutils.mongo_utils import get_mongo_connection_handle
 from ebi_eva_internal_pyutils.pg_utils import get_all_results_for_query
 
 logger = log_cfg.get_logger(__name__)
-log_cfg.set_log_level(logging.INFO)
-
-logger = log_cfg.get_logger(__name__)
 log_cfg.add_stdout_handler()
+log_cfg.set_log_level(logging.INFO)
 
 CVE_OPS_COLLECTIONS = ["clusteredVariantOperationEntity", "dbsnpClusteredVariantOperationEntity"]
 SVE_OPS_COLLECTIONS = ["submittedVariantOperationEntity", "dbsnpSubmittedVariantOperationEntity"]
