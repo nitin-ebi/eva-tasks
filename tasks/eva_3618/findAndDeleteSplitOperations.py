@@ -98,7 +98,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Find and delete RS_SPLIT operations that were split into the same RS',
                                      add_help=False)
     parser.add_argument("--private-config-xml-file", help="ex: /path/to/eva-maven-settings.xml", required=True)
-    parser.add_argument("--working-dir", help="ex: /path/to/dir where ", required=True)
+    parser.add_argument("--working-dir", help="ex: /path/to/dir where deleted documents will be logged", required=True)
     args = parser.parse_args()
 
     find_and_delete_split_operations(args.private_config_xml_file, args.working_dir)
