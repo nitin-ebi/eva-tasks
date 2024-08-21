@@ -1,9 +1,7 @@
 import argparse
 import logging
 import os
-import random
 import shutil
-import string
 import subprocess
 
 import yaml
@@ -18,8 +16,7 @@ log_cfg.set_log_level(logging.INFO)
 
 
 def run_nextflow(working_dir, params, project_id, accession_report_file, db_name):
-    random_string = ''.join(random.choice(string.ascii_letters) for i in range(6))
-    workflow_name = f"import_accession_{project_id}_{random_string}"
+    workflow_name = f"import_accession_{project_id}_{os.path.basename(accession_report_file).replace('.', '_')}"
 
     # create nextflow work dir - remove if already exists
     nextflow_work_dir = os.path.join(working_dir, project_id, workflow_name)
@@ -33,6 +30,7 @@ def run_nextflow(working_dir, params, project_id, accession_report_file, db_name
             ' '.join((
                 'export NXF_OPTS="-Xms1g -Xmx8g"; ',
                 params['nextflow_path'], params['nextflow_script'],
+                '-name', workflow_name,
                 '-work-dir', nextflow_work_dir,
                 '--java_app', params['java_app'],
                 '--acc_import_job_props', params['acc_import_job_props'],
@@ -96,19 +94,17 @@ def run_import_accession_job_for_project(working_dir, params, project_id):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='', add_help=False)
     parser.add_argument("--working-dir", help="/path/to/dir where all the logs and other files will be stored",
-                        required="true")
+                        required=True)
     parser.add_argument("--params-file", help="/path/to/params/file containing path of nextflow, java app etc.",
-                        required="true")
-    parser.add_argument("--project-list", help="Comma separated project list e.g. PRJEB123,PRJEB456",
+                        required=True)
+    parser.add_argument("--project-list", help="List of projects space-separated e.g. PRJEB123 PRJEB456",
                         required=True, nargs='+')
     args = parser.parse_args()
 
-    if not os.path.exists(args.working_dir):
-        os.makedirs(args.working_dir, exist_ok=True)
+    os.makedirs(args.working_dir, exist_ok=True)
 
     with open(args.params_file, 'r') as file:
         params = yaml.safe_load(file)
 
-    project_list = args.project_list[0].split(',')
-    for project_id in project_list:
+    for project_id in args.project_list:
         run_import_accession_job_for_project(args.working_dir, params, project_id.strip())
