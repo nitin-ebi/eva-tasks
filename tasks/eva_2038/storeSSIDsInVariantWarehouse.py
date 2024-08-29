@@ -47,6 +47,8 @@ def run_nextflow(working_dir, params, project_id, acc_file_db_name_csv):
 
 def get_tax_asm_details(params, project_id, formatted_file_names):
     file_names = ",".join(f"'{f}'" for f in formatted_file_names)
+    logger.info(f"Files to be searched in DB: {file_names}")
+
     with get_metadata_connection_handle("production_processing", params['private_settings_xml_file']) as pg_conn:
         query = f"""
             select distinct f.filename, asm.assembly_accession, t.taxonomy_id
@@ -71,7 +73,7 @@ def get_accession_report_files_from_ftp(working_dir, project_id):
         ftp.login()
         ftp.cwd(f'pub/databases/eva/{project_id}')
         files_in_ftp = ftp.nlst()
-        ftp_accession_report_files = [f for f in files_in_ftp if ".accessioned.vcf" in f]
+        ftp_accession_report_files = [f for f in files_in_ftp if ".accessioned.vcf" in f and f.endswith(('.vcf', '.vcf.gz'))]
         if ftp_accession_report_files:
             download_file_dir = os.path.join(working_dir, project_id, 'FTP')
             os.makedirs(download_file_dir, exist_ok=True)
@@ -104,7 +106,7 @@ def run_import_accession_job_for_project(working_dir, params, project_id):
         accession_report_files = [
             os.path.join(project_path, '60_eva_public', f)
             for f in os.listdir(os.path.join(project_path, '60_eva_public'))
-            if ".accessioned.vcf" in f]
+            if ".accessioned.vcf" in f and f.endswith(('.vcf', '.vcf.gz'))]
     else:
         logger.warning(f"Could not find the Project {project_id} in project_path {project_path}. "
                        f"Trying to retrieve accession report files from FTP")
@@ -116,6 +118,8 @@ def run_import_accession_job_for_project(working_dir, params, project_id):
     if not accession_report_files:
         raise Exception(f"No accession report files found for project {project_id} in CODON/FTP")
     else:
+        logger.info(f"Accession report files: {accession_report_files}")
+
         formatted_name_file_dict = {
             os.path.basename(file).replace('.accessioned.vcf', '.vcf'): file
             for file in accession_report_files
