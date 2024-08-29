@@ -32,7 +32,7 @@ def prepare_final_file_with_studies(study_dir):
         with open(final_file_path, 'w') as file:
             for study in final_studies_list:
                 file.write(f"{study}\n")
-        print("List has been written to the file successfully.")
+        logger.info("List has been written to the file successfully.")
     except Exception as e:
         logger.error(f"An error occurred while writing the file: {e}")
 
@@ -62,9 +62,8 @@ def get_studies_for_accession_import_run(private_settings_file, study_dir):
                         {"$unwind": "$files"},
                         {"$group": {"_id": db_name, "sids": {"$addToSet": "$files.sid"}}}
                     ]
-                    result = collection.aggregate(pipeline, allowDiskUse=True)
+                    cursor = collection.aggregate(pipeline, allowDiskUse=True)
 
-                    cursor = result
                     if cursor:
                         logger.info(f"Studies found in database: {db_name}")
                         for doc in cursor:
@@ -74,7 +73,7 @@ def get_studies_for_accession_import_run(private_settings_file, study_dir):
                                 with open(db_file_path, 'w') as file:
                                     for study in studies_list:
                                         file.write(f"{study}\n")
-                                print("List has been written to the file successfully.")
+                                logger.info("List has been written to the file successfully.")
                             except Exception as e:
                                 logger.error(f"An error occurred while writing the file {db_file_path}: {e}")
                     else:
