@@ -144,7 +144,7 @@ def run_import_accession_job_for_project(working_dir, params, project_id):
                         db_name = resolve_variant_warehouse_db_name(pg_conn, asm, taxonomy)
                         writer.writerow([formatted_name_file_dict[acc_file], db_name])
 
-                run_nextflow(working_dir, params, project_id, acc_file_db_name_csv)
+            run_nextflow(working_dir, params, project_id, acc_file_db_name_csv)
 
 
 if __name__ == "__main__":
