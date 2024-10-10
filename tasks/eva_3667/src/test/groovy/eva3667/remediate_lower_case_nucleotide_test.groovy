@@ -176,11 +176,28 @@ class RemediationApplicationIntegrationTest {
 
     List<Document> getFilesDataForDifferentTestCases() {
         return Arrays.asList(
+                getFileDocument("sid21", "fid21", "file_name_21.vcf.gz")
+                        .append("samp", new Document("samp211", 0).append("samp212", 1).append("samp213", 2)),
+                getFileDocument("sid211", "fid211", "file_name_211.vcf.gz")
+                        .append("samp", new Document("samp2111", 0).append("samp2112", 1).append("samp2113", 2)),
+                getFileDocument("sid22", "fid22", "file_name_22.vcf.gz")
+                        .append("samp", new Document("samp221", 0).append("samp222", 1).append("samp223", 2)),
+                getFileDocument("sid222", "fid222", "file_name_222.vcf.gz")
+                        .append("samp", new Document("samp2221", 0).append("samp2222", 1).append("samp2223", 2)),
                 // case id collision - fid has more than one file
-                getFileDocument("sid31", "fid31", "file_name_31.vcf.gz"),
-                getFileDocument("sid31", "fid31", "file_name_31_1.vcf.gz"),
+                getFileDocument("sid31", "fid31", "file_name_31.vcf.gz")
+                        .append("samp", new Document("samp311", 0).append("samp312", 1).append("samp313", 2)),
+                getFileDocument("sid31", "fid31", "file_name_31_1.vcf.gz")
+                        .append("samp", new Document("samp311", 0).append("samp312", 1).append("samp313", 2)),
                 //case id collision - fid has just one file
                 getFileDocument("sid41", "fid41", "file_name_41.vcf.gz")
+                        .append("samp", new Document("samp411", 0).append("samp412", 1).append("samp413", 2)),
+                getFileDocument("sid411", "fid411", "file_name_411.vcf.gz")
+                        .append("samp", new Document("samp4111", 0).append("samp4112", 1).append("samp4113", 2)),
+                getFileDocument("sid42", "fid42", "file_name_42.vcf.gz")
+                        .append("samp", new Document("samp421", 0).append("samp422", 1).append("samp423", 2)),
+                getFileDocument("sid422", "fid422", "file_name_422.vcf.gz")
+                        .append("samp", new Document("samp4221", 0).append("samp4222", 1).append("samp4223", 2))
         )
     }
 
@@ -223,8 +240,8 @@ class RemediationApplicationIntegrationTest {
         // case id collision - all sid and fid are different
         // variant with uppercase ref and alt
         List<Document> hgvs21 = Arrays.asList(new Document("type", "genomic").append("name", "chr2:g.22222222A>G"))
-        List<Document> files21 = Arrays.asList(new Document("sid", "sid21").append("fid", "fid21"),
-                new Document("sid", "sid211").append("fid", "fid211"))
+        List<Document> files21 = Arrays.asList(new Document("sid", "sid21").append("fid", "fid21").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid211").append("fid", "fid211").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats21 = Arrays.asList(getVariantStats("sid21", "fid21", 0.21, 0.21, "A", "0/0"),
                 getVariantStats("sid211", "fid211", 0.211, 0.211, "A", "0/0"))
         variantDocumentList.add(getVariantDocument(Variant.VariantType.SNV.toString(), "chr2", "A", "G",
@@ -232,8 +249,8 @@ class RemediationApplicationIntegrationTest {
 
         // variant with lowercase ref and alt
         List<Document> hgvs22 = Arrays.asList(new Document("type", "genomic").append("name", "chr2:g.22222222a>g"))
-        List<Document> files22 = Arrays.asList(new Document("sid", "sid22").append("fid", "fid22"),
-                new Document("sid", "sid222").append("fid", "fid222"))
+        List<Document> files22 = Arrays.asList(new Document("sid", "sid22").append("fid", "fid22").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid222").append("fid", "fid222").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats22 = Arrays.asList(getVariantStats("sid22", "fid22", 0.22, 0.22, "a", "0/0"),
                 getVariantStats("sid222", "fid222", 0.222, 0.222, "a", "0/0"))
         variantDocumentList.add(getVariantDocument(Variant.VariantType.SNV.toString(), "chr2", "a", "g",
@@ -265,8 +282,8 @@ class RemediationApplicationIntegrationTest {
         // case id collision - common fid has just one file
         // variant with uppercase ref and alt
         List<Document> hgvs41 = Arrays.asList(new Document("type", "genomic").append("name", "chr4:g.44444444A>G"))
-        List<Document> files41 = Arrays.asList(new Document("sid", "sid41").append("fid", "fid41"),
-                new Document("sid", "sid411").append("fid", "fid411"))
+        List<Document> files41 = Arrays.asList(new Document("sid", "sid41").append("fid", "fid41").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid411").append("fid", "fid411").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats41 = Arrays.asList(getVariantStats("sid41", "fid41", 0.41, 0.41, "A", "0/0"),
                 getVariantStats("sid411", "fid411", 0.411, 0.411, "A", "0/0"))
         variantDocumentList.add(getVariantDocument(Variant.VariantType.SNV.toString(), "chr4", "A", "G",
@@ -274,9 +291,9 @@ class RemediationApplicationIntegrationTest {
 
         // variant with lowercase ref and alt
         List<Document> hgvs42 = Arrays.asList(new Document("type", "genomic").append("name", "chr4:g.44444444a>g"))
-        List<Document> files42 = Arrays.asList(new Document("sid", "sid42").append("fid", "fid42"),
-                new Document("sid", "sid422").append("fid", "fid422"),
-                new Document("sid", "sid411").append("fid", "fid411"))
+        List<Document> files42 = Arrays.asList(new Document("sid", "sid42").append("fid", "fid42").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid422").append("fid", "fid422").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid411").append("fid", "fid411").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats42 = Arrays.asList(getVariantStats("sid42", "fid42", 0.42, 0.42, "a", "0/0"),
                 getVariantStats("sid422", "fid422", 0.422, 0.422, "a", "0/0"),
                 getVariantStats("sid411", "fid411", 0.411, 0.411, "A", "0/0"))
@@ -346,7 +363,7 @@ class RemediationApplicationIntegrationTest {
                 ((List<Document>) upperCaseVariant.get('st')).stream()
                         .map(doc -> doc.get("fid"))
                         .sorted().collect(Collectors.toList()))
-        assertEquals(Arrays.asList("A", "A", "A", "A"),
+        assertEquals(Arrays.asList("G", "G", "G", "G"),
                 ((List<Document>) upperCaseVariant.get('st')).stream()
                         .map(doc -> doc.get("mafAl"))
                         .sorted().collect(Collectors.toList()))
@@ -398,7 +415,7 @@ class RemediationApplicationIntegrationTest {
                 ((List<Document>) upperCaseVariant.get('st')).stream()
                         .map(doc -> doc.get("fid"))
                         .sorted().collect(Collectors.toList()))
-        assertEquals(Arrays.asList("A", "A", "A", "A"),
+        assertEquals(Arrays.asList("G", "G", "G", "G"),
                 ((List<Document>) upperCaseVariant.get('st')).stream()
                         .map(doc -> doc.get("mafAl"))
                         .sorted().collect(Collectors.toList()))
@@ -476,8 +493,8 @@ class RemediationApplicationIntegrationTest {
         // case id collision - all sid and fid are different
         // variant with uppercase ref and alt
         List<Document> hgvs21 = Arrays.asList(new Document("type", "genomic").append("name", "chr2:g.22222222A>G"))
-        List<Document> files21 = Arrays.asList(new Document("sid", "sid21").append("fid", "fid21"),
-                new Document("sid", "sid211").append("fid", "fid211"))
+        List<Document> files21 = Arrays.asList(new Document("sid", "sid21").append("fid", "fid21").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid211").append("fid", "fid211").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats21 = Arrays.asList(getVariantStats("sid21", "fid21", 0.21, 0.21, UPPERCASE_LARGE_REF, "0/0"),
                 getVariantStats("sid211", "fid211", 0.211, 0.211, UPPERCASE_LARGE_REF, "0/0"))
         variantDocumentList.add(getVariantDocument(Variant.VariantType.INDEL.toString(), "chr2", UPPERCASE_LARGE_REF, UPPERCASE_LARGE_ALT,
@@ -485,8 +502,8 @@ class RemediationApplicationIntegrationTest {
 
         // variant with lowercase ref and alt
         List<Document> hgvs22 = Arrays.asList(new Document("type", "genomic").append("name", "chr2:g.22222222a>g"))
-        List<Document> files22 = Arrays.asList(new Document("sid", "sid22").append("fid", "fid22"),
-                new Document("sid", "sid222").append("fid", "fid222"))
+        List<Document> files22 = Arrays.asList(new Document("sid", "sid22").append("fid", "fid22").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid222").append("fid", "fid222").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats22 = Arrays.asList(getVariantStats("sid22", "fid22", 0.22, 0.22, LOWERCASE_LARGE_REF, "0/0"),
                 getVariantStats("sid222", "fid222", 0.222, 0.222, LOWERCASE_LARGE_REF, "0/0"))
         variantDocumentList.add(getVariantDocument(Variant.VariantType.INDEL.toString(), "chr2", LOWERCASE_LARGE_REF, LOWERCASE_LARGE_ALT,
@@ -506,8 +523,8 @@ class RemediationApplicationIntegrationTest {
         // variant with lowercase ref and alt
         List<Document> hgvs32 = Arrays.asList(new Document("type", "genomic").append("name", "chr3:g.33333333a>g"))
         List<Document> files32 = Arrays.asList(new Document("sid", "sid32").append("fid", "fid32"),
-                new Document("sid", "sid322").append("fid", "fid322"),
-                new Document("sid", "sid31").append("fid", "fid31"))
+                new Document("sid", "sid322").append("fid", "fid322").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid31").append("fid", "fid31").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats32 = Arrays.asList(getVariantStats("sid32", "fid32", 0.32, 0.32, LOWERCASE_LARGE_REF, "0/0"),
                 getVariantStats("sid322", "fid322", 0.322, 0.322, LOWERCASE_LARGE_REF, "0/0"),
                 getVariantStats("sid31", "fid31", 0.31, 0.31, UPPERCASE_LARGE_REF, "0/0"))
@@ -518,8 +535,8 @@ class RemediationApplicationIntegrationTest {
         // case id collision - common fid has just one file
         // variant with uppercase ref and alt
         List<Document> hgvs41 = Arrays.asList(new Document("type", "genomic").append("name", "chr4:g.44444444A>G"))
-        List<Document> files41 = Arrays.asList(new Document("sid", "sid41").append("fid", "fid41"),
-                new Document("sid", "sid411").append("fid", "fid411"))
+        List<Document> files41 = Arrays.asList(new Document("sid", "sid41").append("fid", "fid41").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid411").append("fid", "fid411").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats41 = Arrays.asList(getVariantStats("sid41", "fid41", 0.41, 0.41, UPPERCASE_LARGE_REF, "0/0"),
                 getVariantStats("sid411", "fid411", 0.411, 0.411, UPPERCASE_LARGE_REF, "0/0"))
         variantDocumentList.add(getVariantDocument(Variant.VariantType.INDEL.toString(), "chr4", UPPERCASE_LARGE_REF, UPPERCASE_LARGE_ALT,
@@ -527,9 +544,9 @@ class RemediationApplicationIntegrationTest {
 
         // variant with lowercase ref and alt
         List<Document> hgvs42 = Arrays.asList(new Document("type", "genomic").append("name", "chr4:g.44444444a>g"))
-        List<Document> files42 = Arrays.asList(new Document("sid", "sid42").append("fid", "fid42"),
-                new Document("sid", "sid422").append("fid", "fid422"),
-                new Document("sid", "sid411").append("fid", "fid411"))
+        List<Document> files42 = Arrays.asList(new Document("sid", "sid42").append("fid", "fid42").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid422").append("fid", "fid422").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))),
+                new Document("sid", "sid411").append("fid", "fid411").append("samp", new Document("def", "0|0").append("0|1", Arrays.asList(1))))
         List<Document> stats42 = Arrays.asList(getVariantStats("sid42", "fid42", 0.42, 0.42, LOWERCASE_LARGE_REF, "0/0"),
                 getVariantStats("sid422", "fid422", 0.422, 0.422, LOWERCASE_LARGE_REF, "0/0"),
                 getVariantStats("sid411", "fid411", 0.411, 0.411, UPPERCASE_LARGE_REF, "0/0"))
@@ -606,7 +623,7 @@ class RemediationApplicationIntegrationTest {
                 ((List<Document>) upperCaseVariant.get('st')).stream()
                         .map(doc -> doc.get("fid"))
                         .sorted().collect(Collectors.toList()))
-        assertEquals(Arrays.asList(UPPERCASE_LARGE_REF, UPPERCASE_LARGE_REF, UPPERCASE_LARGE_REF, UPPERCASE_LARGE_REF),
+        assertEquals(Arrays.asList(UPPERCASE_LARGE_ALT, UPPERCASE_LARGE_ALT, UPPERCASE_LARGE_ALT, UPPERCASE_LARGE_ALT),
                 ((List<Document>) upperCaseVariant.get('st')).stream()
                         .map(doc -> doc.get("mafAl"))
                         .sorted().collect(Collectors.toList()))
@@ -662,7 +679,7 @@ class RemediationApplicationIntegrationTest {
                 ((List<Document>) upperCaseVariant.get('st')).stream()
                         .map(doc -> doc.get("fid"))
                         .sorted().collect(Collectors.toList()))
-        assertEquals(Arrays.asList(UPPERCASE_LARGE_REF, UPPERCASE_LARGE_REF, UPPERCASE_LARGE_REF, UPPERCASE_LARGE_REF),
+        assertEquals(Arrays.asList(UPPERCASE_LARGE_ALT, UPPERCASE_LARGE_ALT, UPPERCASE_LARGE_ALT, UPPERCASE_LARGE_ALT),
                 ((List<Document>) upperCaseVariant.get('st')).stream()
                         .map(doc -> doc.get("mafAl"))
                         .sorted().collect(Collectors.toList()))
