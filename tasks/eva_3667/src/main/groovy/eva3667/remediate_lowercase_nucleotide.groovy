@@ -377,7 +377,9 @@ class RemediationApplication implements CommandLineRunner {
         Set<VariantStatsMongo> variantStatsMongoSet = new HashSet<>()
         for (VariantStatsMongo stats : variantStatsSet) {
             variantStatsMongoSet.add(new VariantStatsMongo(stats.getStudyId(), stats.getFileId(), stats.getCohortId(),
-                    stats.getMaf(), stats.getMgf(), stats.getMafAllele().toUpperCase(), stats.getMgfGenotype(),
+                    stats.getMaf(), stats.getMgf(),
+                    stats.getMafAllele() != null ? stats.getMafAllele().toUpperCase() : stats.getMafAllele(),
+                    stats.getMgfGenotype(),
                     stats.getMissingAlleles(), stats.getMissingGenotypes(), stats.getNumGt()))
         }
 

@@ -236,6 +236,12 @@ class RemediationApplicationIntegrationTest {
         List<Document> stats11 = Arrays.asList(getVariantStats("sid11", "fid11", 0.11, 0.11, "a", "0/0"))
         variantDocumentList.add(getVariantDocument(Variant.VariantType.SNV.toString(), "chr1", "a", "g",
                 11111111, 11111111, 1, hgvs11, files11, stats11))
+        // case no id collision after remediation - stats mafAl null
+        List<Document> hgvs51 = Arrays.asList(new Document("type", "genomic").append("name", "chr5:g.55555555a>g"))
+        List<Document> files51 = Arrays.asList(new Document("sid", "sid51").append("fid", "fid51"))
+        List<Document> stats51 = Arrays.asList(getVariantStats("sid51", "fid51", 0.51, 0.51, null, "0/0"))
+        variantDocumentList.add(getVariantDocument(Variant.VariantType.SNV.toString(), "chr5", "a", "g",
+                55555555, 55555555, 1, hgvs51, files51, stats51))
 
         // case id collision - all sid and fid are different
         // variant with uppercase ref and alt
@@ -321,6 +327,19 @@ class RemediationApplicationIntegrationTest {
         assertEquals('G', upperCaseVariant.get("alt"))
         assertEquals('chr1:g.11111111A>G', upperCaseVariant.get("hgvs")[0]["name"])
         assertEquals('A', upperCaseVariant.get("st")[0]["mafAl"])
+
+        // assert lowercase variant deleted
+        lowerCaseVariantList = variantsColl.find(Filters.eq("_id", "chr5_55555555_a_g")).into([])
+        assertEquals(0, lowerCaseVariantList.size())
+        // assert uppercase variant inserted
+        upperCaseVariantList = variantsColl.find(Filters.eq("_id", "chr5_55555555_A_G")).into([])
+        assertEquals(1, upperCaseVariantList.size())
+        // assert all things updated to uppercase in the updated variant
+        upperCaseVariant = upperCaseVariantList.get(0)
+        assertEquals('A', upperCaseVariant.get("ref"))
+        assertEquals('G', upperCaseVariant.get("alt"))
+        assertEquals('chr5:g.55555555A>G', upperCaseVariant.get("hgvs")[0]["name"])
+        assertEquals(null, upperCaseVariant.get("st")[0]["mafAl"])
 
         // assert annotation remediation
         List<Document> lowercaseAnnot1 = annotationsColl.find(Filters.eq("_id", "chr1_11111111_a_g_82_82")).into([])
