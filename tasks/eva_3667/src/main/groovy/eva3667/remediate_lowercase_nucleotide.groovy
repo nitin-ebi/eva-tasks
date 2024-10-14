@@ -4,6 +4,7 @@ import com.mongodb.BasicDBObject
 import com.mongodb.client.MongoCollection
 import com.mongodb.client.model.*
 import groovy.cli.picocli.CliBuilder
+import org.bson.BsonSerializationException
 import org.bson.Document
 import org.bson.conversions.Bson
 import org.opencb.biodata.models.feature.Genotype
@@ -87,15 +88,25 @@ class RemediationApplication implements CommandLineRunner {
         // Create a query to find all matching lowercase variants
         Query regexQuery = new Query(where("_id").regex(REGEX_PATTERN))
         // Obtain a MongoCursor to iterate through documents
-        def mongoCursor = variantsColl.find(regexQuery.getQueryObject()).iterator()
+        def mongoCursor = variantsColl.find(regexQuery.getQueryObject()).noCursorTimeout(true).iterator()
 
         // Iterate through each variant one by one
         while (mongoCursor.hasNext()) {
             counter++
             logger.info("Processing Variant {}", counter)
-            // read the variant as a VariantDocument
-            VariantDocument lowercaseVariant = mongoTemplate.getConverter().read(VariantDocument.class, mongoCursor.next())
-            logger.info("Processing Variant: {}", lowercaseVariant)
+            Document lowercaseDocument = mongoCursor.next()
+            VariantDocument lowercaseVariant
+            try {
+                // read the variant as a VariantDocument
+                lowercaseVariant = mongoTemplate.getConverter().read(VariantDocument.class, lowercaseDocument)
+                logger.info("Processing Variant: {}", lowercaseVariant)
+            } catch (Exception e) {
+                logger.error("Exception while converting Bson document to Variant Document with _id: {} " +
+                        "chr {} start {} ref {} alt {}. Exception: {}", lowercaseDocument.get("_id"),
+                        lowercaseDocument.get("chr"), lowercaseDocument.get("start"), lowercaseDocument.get("ref"),
+                        lowercaseDocument.get("alt"), e.getMessage())
+                continue
+            }
 
             // filter out false positives - double check if ref or alt really contains lowercase
             if (!hasLowerCaseRefOrAlt(lowercaseVariant)) {
@@ -300,28 +311,32 @@ class RemediationApplication implements CommandLineRunner {
                         where("_id").regex("^" + escapedNewVariantId + ".*")
                 )
         )
-        List<Document> annotationsList = mongoTemplate.getCollection(ANNOTATIONS_COLLECTION)
-                .find(annotationsCombinedRegexQuery.getQueryObject())
-                .into(new ArrayList<>())
-        Set<String> uppercaseAnnotationIdSet = annotationsList.stream()
-                .filter(doc -> doc.get("_id").toString().startsWith(newVariantId))
-                .map(doc -> doc.get("_id"))
-                .collect(Collectors.toSet())
-        Set<Document> lowercaseAnnotationsSet = annotationsList.stream()
-                .filter(doc -> doc.get("_id").toString().startsWith(lowercaseVariantId))
-                .collect(Collectors.toSet())
-        for (Document annotation : lowercaseAnnotationsSet) {
-            // if corresponding uppercase annotation is already present skip it else insert it
-            String lowercaseAnnotationId = annotation.get("_id")
-            String uppercaseAnnotationId = lowercaseAnnotationId.replace(lowercaseVariantId, newVariantId)
-            if (!uppercaseAnnotationIdSet.contains(uppercaseAnnotationId)) {
-                annotation.put("_id", uppercaseAnnotationId)
-                logger.info("insert uppercase annotation: {}", annotation)
-                mongoTemplate.getCollection(ANNOTATIONS_COLLECTION).insertOne(annotation)
+        try {
+            List<Document> annotationsList = mongoTemplate.getCollection(ANNOTATIONS_COLLECTION)
+                    .find(annotationsCombinedRegexQuery.getQueryObject())
+                    .into(new ArrayList<>())
+            Set<String> uppercaseAnnotationIdSet = annotationsList.stream()
+                    .filter(doc -> doc.get("_id").toString().startsWith(newVariantId))
+                    .map(doc -> doc.get("_id"))
+                    .collect(Collectors.toSet())
+            Set<Document> lowercaseAnnotationsSet = annotationsList.stream()
+                    .filter(doc -> doc.get("_id").toString().startsWith(lowercaseVariantId))
+                    .collect(Collectors.toSet())
+            for (Document annotation : lowercaseAnnotationsSet) {
+                // if corresponding uppercase annotation is already present skip it else insert it
+                String lowercaseAnnotationId = annotation.get("_id")
+                String uppercaseAnnotationId = lowercaseAnnotationId.replace(lowercaseVariantId, newVariantId)
+                if (!uppercaseAnnotationIdSet.contains(uppercaseAnnotationId)) {
+                    annotation.put("_id", uppercaseAnnotationId)
+                    logger.info("insert uppercase annotation: {}", annotation)
+                    mongoTemplate.getCollection(ANNOTATIONS_COLLECTION).insertOne(annotation)
+                }
+                // delete the lowercase annotation
+                logger.info("delete lowercase annotation: {}", lowercaseAnnotationId)
+                mongoTemplate.remove(Query.query(Criteria.where("_id").is(lowercaseAnnotationId)), ANNOTATIONS_COLLECTION)
             }
-            // delete the lowercase annotation
-            logger.info("delete lowercase annotation: {}", lowercaseAnnotationId)
-            mongoTemplate.remove(Query.query(Criteria.where("_id").is(lowercaseAnnotationId)), ANNOTATIONS_COLLECTION)
+        } catch (BsonSerializationException ex) {
+            logger.error("Exception occurred while trying to remediate annotation for variant: {}", lowercaseVariantId)
         }
     }
 
