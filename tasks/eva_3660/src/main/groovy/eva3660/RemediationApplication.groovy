@@ -48,7 +48,7 @@ class RemediationApplication implements CommandLineRunner {
     public static final String FILES_COLLECTION_FILE_ID_KEY = "fid"
 
     // Search for IDs that have either ref or alt longer than 1 base
-    // Ignore non-ACGTN alleles (*, <>), but do include alleles longer than 50 bases (encoded ids))
+    // Ignore non-ACGTN alleles (*, <>), but do include alleles longer than 50 bases (encoded ids)
     public static final String REGEX_PATTERN = "" +
             "([^_<>*\\s]{2,}" + // ref at least 2 chars
             "_[^_<>*\\s]*" +    // alt can be any length
