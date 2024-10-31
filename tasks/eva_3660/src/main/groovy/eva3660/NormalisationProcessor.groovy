@@ -13,17 +13,29 @@ class NormalisationProcessor {
     }
 
     /**
-     * Normalisation with specified reference allele.
+     * Normalisation with specified reference, alternate, secondary alternate alleles, and maf allele.
+     * Also truncate common leading context allele if present (i.e. allows empty alleles).
      *
      * @param contig Name of contig as found in FASTA
-     * @param position Position of variant
-     * @param reference Reference allele
-     * @param alternates List of alternate alleles
-     * @return normalised position, normalised ref and list of normalised alternates
+     * @param valsforNorm Values required for normalisation (position & various alleles) Position of variant
+     * @return normalised values
      */
-    Tuple normaliseWithRef(String contig, long position, String reference, List<String> alternates) {
-        Tuple2<Long, List<String>> result = normalise(contig, position, [reference] + alternates)
-        return new Tuple(result.v1, result.v2[0], result.v2[1..-1])
+    ValuesForNormalisation normaliseAndTruncate(String contig, ValuesForNormalisation valsForNorm) {
+        // mafAllele can be null
+        boolean mafIsNull = false
+        List<String> allelesToNorm = [valsForNorm.reference, valsForNorm.alternate, valsForNorm.mafAllele] + valsForNorm.secondaryAlternates
+        if (Objects.isNull(valsForNorm.mafAllele)) {
+            mafIsNull = true
+            allelesToNorm = [valsForNorm.reference, valsForNorm.alternate] + valsForNorm.secondaryAlternates
+        }
+        def (newPosition, newAlleles) = normalise(contig, valsForNorm.position, allelesToNorm)
+        if (allSameStart(newAlleles)) {
+            newAlleles = truncateLeftmost(newPosition, newAlleles)
+        }
+        if (mafIsNull) {
+            return new ValuesForNormalisation(newPosition, newAlleles[0], newAlleles[1], null, newAlleles[3..-1])
+        }
+        return new ValuesForNormalisation(newPosition, newAlleles[0], newAlleles[1], newAlleles[2], newAlleles[3..-1])
     }
 
     /**
@@ -35,26 +47,25 @@ class NormalisationProcessor {
      * @param alleles List of alleles
      * @return normalised position and list of normalised alleles (guaranteed to preserve input order)
      */
-    Tuple2<Long, List<String>> normalise(String contig, long position, List<String> alleles) {
+    Tuple normalise(String contig, int position, List<String> alleles) {
         // Allow for initially empty alleles
         def (newPosition, newAlleles) = addContextIfEmpty(contig, position, alleles)
         // While all alleles end in same nucleotide
-        while (allAllelesSameEnd(newAlleles)) {
+        while (allSameEnd(newAlleles)) {
             // Truncate rightmost nucleotide
-            newAlleles = newAlleles.stream().collect{ it.substring(0, it.size()-1) }
+            newAlleles = truncateRightmost(newAlleles)
             // If exists an empty allele, extend alleles 1 to the left
             (newPosition, newAlleles) = addContextIfEmpty(contig, newPosition, newAlleles)
         }
         // While all alleles start with same nucleotide and have length 2 or more
-        while (allAllelesSameStart(newAlleles) && allAllelesLengthAtLeastTwo(newAlleles)) {
+        while (allSameStart(newAlleles) && allLengthAtLeastTwo(newAlleles)) {
             // Truncate leftmost nucleotide
-            newAlleles = newAlleles.stream().collect{ it.substring(1) }
-            newPosition++
+            (newPosition, newAlleles) = truncateLeftmost(newPosition, newAlleles)
         }
-        return new Tuple2(newPosition, newAlleles)
+        return new Tuple(newPosition, newAlleles)
     }
 
-    private Tuple2<Long, List<String>> addContextIfEmpty(String contig, long position, List<String> alleles) {
+    private Tuple addContextIfEmpty(String contig, int position, List<String> alleles) {
         def newPosition = position
         def newAlleles = alleles
         def existEmptyAlleles = alleles.stream().any{it.size() }
@@ -66,19 +77,27 @@ class NormalisationProcessor {
             def contextBase = fastaReader.getSequenceToUpperCase(contig, newPosition, newPosition)
             newAlleles = newAlleles.stream().collect { "${contextBase}${it}" }
         }
-        return new Tuple2(newPosition, newAlleles)
+        return new Tuple(newPosition, newAlleles)
     }
 
-    private boolean allAllelesSameEnd(List<String> alleles) {
+    private boolean allSameEnd(List<String> alleles) {
         return alleles.stream().collect{it[-1] }.toSet().size() == 1
     }
 
-    private boolean allAllelesSameStart(List<String> alleles) {
+    private boolean allSameStart(List<String> alleles) {
         return alleles.stream().collect{it[0] }.toSet().size() == 1
     }
 
-    private boolean allAllelesLengthAtLeastTwo(List<String> alleles) {
+    private boolean allLengthAtLeastTwo(List<String> alleles) {
         return alleles.stream().allMatch{it.size() >= 2 }
+    }
+
+    private List<String> truncateRightmost(List<String> alleles) {
+        return alleles.stream().collect{ it.substring(0, it.size()-1) }
+    }
+
+    private Tuple truncateLeftmost(int position, List<String> alleles) {
+        return new Tuple(++position, alleles.stream().collect{ it.substring(1) })
     }
 
     void close() {
