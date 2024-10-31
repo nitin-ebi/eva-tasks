@@ -31,24 +31,24 @@ class NormalisationTest {
                 processor.fastaReader.getSequenceToUpperCase("CM000683.2", 7678481, 7678480 + (10*4)))
 
         // Variant that deletes one repeat from the middle is normalised to be left-aligned
-        assertEquals(new Tuple2(7678481L, ["TTTTA", "T"]),
-                processor.normalise("CM000683.2", 7678489, ["ATTTATTT", "ATTT"]))
+        assertEquals(new Tuple(7678481, 7678485, 5, ["TTTTA", "T"]),
+                processor.normalise("CM000683.2", 7678489, 7678496, 8, ["ATTTATTT", "ATTT"]))
 
         // Same variant with different representation (empty allele)
-        assertEquals(new Tuple2(7678481L, ["TTTTA", "T"]),
-                processor.normalise("CM000683.2", 7678489, ["ATTT", ""]))
+        assertEquals(new Tuple(7678481, 7678485, 5, ["TTTTA", "T"]),
+                processor.normalise("CM000683.2", 7678489, 7678492, 4, ["ATTT", ""]))
 
         // Multiple alternate alleles
-        assertEquals(new Tuple2(7678481L, ["TTTTA", "T", "TTTTATTTA"]),
-                processor.normalise("CM000683.2", 7678489, ["ATTTATTT", "ATTT", "ATTTATTTATTT"]))
+        assertEquals(new Tuple(7678481, 7678489, 9, ["TTTTA", "T", "TTTTATTTA"]),
+                processor.normalise("CM000683.2", 7678489, 7678500, 12, ["ATTTATTT", "ATTT", "ATTTATTTATTT"]))
     }
 
     @Test
     void testNormaliseAndTruncate() {
-        // TODO rewrite this
-        // Same test as above (testNormalise) but with specified ref & primary alt
-//        assertEquals(new Tuple(7678481L, "TTTTA", "T", ["TTTTATTTA"]),
-//                processor.normalise("CM000683.2", 7678489, "ATTTATTT", "ATTT", ["ATTTATTTATTT"]))
+        def input = new ValuesForNormalisation(7678489, 7678500, 12, "ATTTATTT", "ATTT", "ATTT", ["ATTTATTTATTT"])
+        // Initial T is truncated
+        def expectedOutput =new ValuesForNormalisation(7678482, 7678489, 8, "TTTA", "", "", ["TTTATTTA"])
+        assertEquals(expectedOutput, processor.normaliseAndTruncate("CM000683.2", input))
     }
 
     @Test

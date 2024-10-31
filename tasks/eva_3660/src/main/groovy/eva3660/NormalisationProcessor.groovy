@@ -28,14 +28,14 @@ class NormalisationProcessor {
             mafIsNull = true
             allelesToNorm = [valsForNorm.reference, valsForNorm.alternate] + valsForNorm.secondaryAlternates
         }
-        def (newPosition, newAlleles) = normalise(contig, valsForNorm.position, allelesToNorm)
+        def (newStart, newEnd, newLength, newAlleles) = normalise(contig, valsForNorm.start, valsForNorm.end, valsForNorm.length, allelesToNorm)
         if (allSameStart(newAlleles)) {
-            newAlleles = truncateLeftmost(newPosition, newAlleles)
+            (newStart, newLength, newAlleles) = truncateLeftmost(newStart, newLength, newAlleles)
         }
         if (mafIsNull) {
-            return new ValuesForNormalisation(newPosition, newAlleles[0], newAlleles[1], null, newAlleles[3..-1])
+            return new ValuesForNormalisation(newStart, newEnd, newLength, newAlleles[0], newAlleles[1], null, newAlleles[3..-1])
         }
-        return new ValuesForNormalisation(newPosition, newAlleles[0], newAlleles[1], newAlleles[2], newAlleles[3..-1])
+        return new ValuesForNormalisation(newStart, newEnd, newLength, newAlleles[0], newAlleles[1], newAlleles[2], newAlleles[3..-1])
     }
 
     /**
@@ -43,41 +43,46 @@ class NormalisationProcessor {
      * See here: https://genome.sph.umich.edu/wiki/Variant_Normalization
      *
      * @param contig Name of contig as found in FASTA
-     * @param position Position of variant
+     * @param start Start coordinate of variant
+     * @param end End coordinate of variant
+     * @param length Length of variant
      * @param alleles List of alleles
-     * @return normalised position and list of normalised alleles (guaranteed to preserve input order)
+     * @return normalised coordinates and list of normalised alleles (guaranteed to preserve input order)
      */
-    Tuple normalise(String contig, int position, List<String> alleles) {
+    Tuple normalise(String contig, int start, int end, int length, List<String> alleles) {
         // Allow for initially empty alleles
-        def (newPosition, newAlleles) = addContextIfEmpty(contig, position, alleles)
+        def (newStart, newLength, newAlleles) = addContextIfEmpty(contig, start, length, alleles)
+        def newEnd = end
         // While all alleles end in same nucleotide
         while (allSameEnd(newAlleles)) {
             // Truncate rightmost nucleotide
-            newAlleles = truncateRightmost(newAlleles)
+            (newEnd, newLength, newAlleles) = truncateRightmost(newEnd, newLength, newAlleles)
             // If exists an empty allele, extend alleles 1 to the left
-            (newPosition, newAlleles) = addContextIfEmpty(contig, newPosition, newAlleles)
+            (newStart, newLength, newAlleles) = addContextIfEmpty(contig, newStart, newLength, newAlleles)
         }
         // While all alleles start with same nucleotide and have length 2 or more
         while (allSameStart(newAlleles) && allLengthAtLeastTwo(newAlleles)) {
             // Truncate leftmost nucleotide
-            (newPosition, newAlleles) = truncateLeftmost(newPosition, newAlleles)
+            (newStart, newLength, newAlleles) = truncateLeftmost(newStart, newLength, newAlleles)
         }
-        return new Tuple(newPosition, newAlleles)
+        return new Tuple(newStart, newEnd, newLength, newAlleles)
     }
 
-    private Tuple addContextIfEmpty(String contig, int position, List<String> alleles) {
-        def newPosition = position
+    private Tuple addContextIfEmpty(String contig, int start, int length, List<String> alleles) {
+        def newStart = start
+        def newLength = length
         def newAlleles = alleles
         def existEmptyAlleles = alleles.stream().any{it.size() }
         if (existEmptyAlleles) {
             // Extend alleles 1 to the left
-            newPosition--
+            newStart--
+            newLength++
             // Note VCF specifies what to do if position starts at 1, but AFAICT the normalisation algorithm does not
             // See vt implementation: https://github.com/atks/vt/blob/master/variant_manip.cpp#L513
-            def contextBase = fastaReader.getSequenceToUpperCase(contig, newPosition, newPosition)
+            def contextBase = fastaReader.getSequenceToUpperCase(contig, newStart, newStart)
             newAlleles = newAlleles.stream().collect { "${contextBase}${it}" }
         }
-        return new Tuple(newPosition, newAlleles)
+        return new Tuple(newStart, newLength, newAlleles)
     }
 
     private boolean allSameEnd(List<String> alleles) {
@@ -92,12 +97,12 @@ class NormalisationProcessor {
         return alleles.stream().allMatch{it.size() >= 2 }
     }
 
-    private List<String> truncateRightmost(List<String> alleles) {
-        return alleles.stream().collect{ it.substring(0, it.size()-1) }
+    private Tuple truncateRightmost(int end, int length, List<String> alleles) {
+        return new Tuple(--end, --length, alleles.stream().collect{ it.substring(0, it.size()-1) })
     }
 
-    private Tuple truncateLeftmost(int position, List<String> alleles) {
-        return new Tuple(++position, alleles.stream().collect{ it.substring(1) })
+    private Tuple truncateLeftmost(int start, int length, List<String> alleles) {
+        return new Tuple(++start, --length, alleles.stream().collect{ it.substring(1) })
     }
 
     void close() {

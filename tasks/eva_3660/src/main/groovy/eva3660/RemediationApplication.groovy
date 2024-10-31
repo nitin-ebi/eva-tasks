@@ -116,11 +116,11 @@ class RemediationApplication implements CommandLineRunner {
             String mafAllele = originalVariant.getVariantStatsMongo().getMafAllele()
             // Normalise all alleles and truncate common leading context allele if present
             ValuesForNormalisation normalisedValues = normaliser.normaliseAndTruncate(originalVariant.chromosome,
-                    new ValuesForNormalisation(originalVariant.start, originalVariant.reference,
-                            originalVariant.alternate, mafAllele, secondaryAlternates))
+                    new ValuesForNormalisation(originalVariant.start, originalVariant.end, originalVariant.length,
+                            originalVariant.reference, originalVariant.alternate, mafAllele, secondaryAlternates))
 
             // create new id of variant
-            String newId = VariantDocument.buildVariantId(originalVariant.chromosome, normalisedValues.position, normalisedValues.reference.toUpperCase(),
+            String newId = VariantDocument.buildVariantId(originalVariant.chromosome, normalisedValues.start, normalisedValues.reference.toUpperCase(),
                     normalisedValues.alternate.toUpperCase())
             logger.info("New id of the variant : {}", newId)
             if (originalVariant.getId().equals(newId)) {
@@ -191,7 +191,7 @@ class RemediationApplication implements CommandLineRunner {
         Set<VariantStatsMongo> remediatedStats = getRemediatedStats(originalVariant.getVariantStatsMongo(), normalisedVals)
 
         VariantDocument remediatedVariant = new VariantDocument(originalVariant.getVariantType(), originalVariant.getChromosome(),
-                normalisedVals.position, /*TODO END & LENGTH*/ originalVariant.getEnd(), originalVariant.getLength(), normalisedVals.reference,
+                normalisedVals.start, /*TODO END & LENGTH*/ originalVariant.getEnd(), originalVariant.getLength(), normalisedVals.reference,
                 normalisedVals.alternate, null, originalVariant.getIds(), remediatedFiles)
         remediatedVariant.setStats(remediatedStats)
 

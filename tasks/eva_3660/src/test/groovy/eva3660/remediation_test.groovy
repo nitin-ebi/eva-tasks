@@ -78,4 +78,6 @@ class RemediationApplicationIntegrationTest {
         return builder.toString()
     }
 
+    // TODO other remediation integration tests
+
 }
