@@ -145,39 +145,39 @@ class RemediationApplication implements CommandLineRunner {
                     originalVariant.getVariantSources() : new HashSet<>()
             Set<VariantSourceEntity> variantInDBFileSet = variantInDB.getVariantSources() != null ?
                     variantInDB.getVariantSources() : new HashSet<>()
-            Set<Tuple2> remediatedSidFidTuple2Set = remediatedVariantFileSet.stream()
+            Set<Tuple2> remediatedSidFidPairSet = remediatedVariantFileSet.stream()
                     .map(vse -> new Tuple2(vse.getStudyId(), vse.getFileId()))
                     .collect(Collectors.toSet())
-            Set<Tuple2> variantInDBSidFidTuple2Set = variantInDBFileSet.stream()
+            Set<Tuple2> variantInDBSidFidPairSet = variantInDBFileSet.stream()
                     .map(vse -> new Tuple2(vse.getStudyId(), vse.getFileId()))
                     .collect(Collectors.toSet())
 
-            // take the common Tuple2 of sid-fid between the remediated variant and the variant in db
-            Set<Tuple2> commonSidFidTuple2s = new HashSet<>(remediatedSidFidTuple2Set)
-            commonSidFidTuple2s.retainAll(variantInDBSidFidTuple2Set)
+            // take the common pairs of sid-fid between the remediated variant and the variant in db
+            Set<Tuple2> commonSidFidPairs = new HashSet<>(remediatedSidFidPairSet)
+            commonSidFidPairs.retainAll(variantInDBSidFidPairSet)
 
-            if (commonSidFidTuple2s.isEmpty()) {
+            if (commonSidFidPairs.isEmpty()) {
                 logger.info("No common sid fid entries between remediated variant and variant in DB")
                 remediateCaseMergeAllSidFidAreDifferent(variantInDB, originalVariant, newId, normalisedValues)
                 continue
             }
 
-            // check if there is any Tuple2 of sid and fid from common Tuple2s, for which there are more than one entry in files collection
-            Map<Tuple2, Integer> result = getSidFidTuple2NumberOfDocumentsMap(commonSidFidTuple2s)
-            Set<Tuple2> sidFidTuple2sWithGTOneEntry = result.entrySet().stream()
+            // check if there is any pair of sid and fid from common pair, for which there are more than one entry in files collection
+            Map<Tuple2, Integer> result = getSidFidPairNumberOfDocumentsMap(commonSidFidPairs)
+            Set<Tuple2> sidFidPairsWithGTOneEntry = result.entrySet().stream()
                     .filter(entry -> entry.getValue() > 1)
                     .map(entry -> entry.getKey())
                     .collect(Collectors.toSet())
-            if (sidFidTuple2sWithGTOneEntry.isEmpty()) {
+            if (sidFidPairsWithGTOneEntry.isEmpty()) {
                 logger.info("All common sid fid entries has only one file entry")
-                Set<Tuple2> sidFidTuple2NotInDB = new HashSet<>(remediatedSidFidTuple2Set)
-                sidFidTuple2NotInDB.removeAll(commonSidFidTuple2s)
-                remediateCaseMergeAllCommonSidFidHasOneFile(variantInDB, originalVariant, sidFidTuple2NotInDB, newId, normalisedValues)
+                Set<Tuple2> sidFidPairNotInDB = new HashSet<>(remediatedSidFidPairSet)
+                sidFidPairNotInDB.removeAll(commonSidFidPairs)
+                remediateCaseMergeAllCommonSidFidHasOneFile(variantInDB, originalVariant, sidFidPairNotInDB, newId, normalisedValues)
                 continue
             }
 
-            logger.info("can't merge as sid fid common Tuple2 has more than 1 entry in file")
-            remediateCaseCantMerge(workingDir, sidFidTuple2sWithGTOneEntry, dbName, originalVariant)
+            logger.info("can't merge as sid fid common pair has more than 1 entry in file")
+            remediateCaseCantMerge(workingDir, sidFidPairsWithGTOneEntry, dbName, originalVariant)
         }
 
         // Finished processing
@@ -191,7 +191,7 @@ class RemediationApplication implements CommandLineRunner {
         Set<VariantStatsMongo> remediatedStats = getRemediatedStats(originalVariant.getVariantStatsMongo(), normalisedVals)
 
         VariantDocument remediatedVariant = new VariantDocument(originalVariant.getVariantType(), originalVariant.getChromosome(),
-                normalisedVals.start, /*TODO END & LENGTH*/ originalVariant.getEnd(), originalVariant.getLength(), normalisedVals.reference,
+                normalisedVals.start, normalisedVals.end, normalisedVals.length, normalisedVals.reference,
                 normalisedVals.alternate, null, originalVariant.getIds(), remediatedFiles)
         remediatedVariant.setStats(remediatedStats)
 
@@ -231,7 +231,7 @@ class RemediationApplication implements CommandLineRunner {
         remediateAnnotations(originalVariant.getId(), newId)
     }
 
-    void remediateCaseCantMerge(String workingDir, Set<Tuple2> sidFidTuple2sWithGtOneEntry, String dbName,
+    void remediateCaseCantMerge(String workingDir, Set<Tuple2> sidFidPairsWithGtOneEntry, String dbName,
                                 VariantDocument originalVariant) {
         logger.info("case can't merge variant - processing variant: {}", originalVariant)
 
@@ -242,7 +242,7 @@ class RemediationApplication implements CommandLineRunner {
         }
         String nmcFilePath = Paths.get(nmcDirPath, dbName + ".txt").toString()
         try (BufferedWriter nmcFile = new BufferedWriter(new FileWriter(nmcFilePath, true))) {
-            for (Tuple2<String, String> p : sidFidTuple2sWithGtOneEntry) {
+            for (Tuple2<String, String> p : sidFidPairsWithGtOneEntry) {
                 nmcFile.write(p.v1 + "," + p.v2 + "," + originalVariant.getId() + "\n")
             }
         } catch (IOException e) {
@@ -251,12 +251,12 @@ class RemediationApplication implements CommandLineRunner {
     }
 
     void remediateCaseMergeAllCommonSidFidHasOneFile(VariantDocument variantInDB, VariantDocument originalVariant,
-                                                     Set<Tuple2> sidFidTuple2NotInDB, String newId,
+                                                     Set<Tuple2> sidFidPairsNotInDB, String newId,
                                                      ValuesForNormalisation normalisedVals) {
         logger.info("case merge all common sid fid has one file - processing variant: {}", originalVariant)
 
         Set<VariantSourceEntryMongo> candidateFiles = originalVariant.getVariantSources().stream()
-                .filter(vse -> sidFidTuple2NotInDB.contains(new Tuple2(vse.getStudyId(), vse.getFileId())))
+                .filter(vse -> sidFidPairsNotInDB.contains(new Tuple2(vse.getStudyId(), vse.getFileId())))
                 .collect(Collectors.toSet())
         Set<VariantSourceEntryMongo> remediatedFiles = getRemediatedFiles(candidateFiles, normalisedVals)
 
@@ -339,21 +339,21 @@ class RemediationApplication implements CommandLineRunner {
     }
 
 
-    Map<Tuple2, Integer> getSidFidTuple2NumberOfDocumentsMap(Set<Tuple2> commonSidFidTuple2s) {
+    Map<Tuple2, Integer> getSidFidPairNumberOfDocumentsMap(Set<Tuple2> commonSidFidPairs) {
         List<Bson> filterConditions = new ArrayList<>()
-        for (Tuple2 sidFidTuple2 : commonSidFidTuple2s) {
-            filterConditions.add(Filters.and(Filters.eq(FILES_COLLECTION_STUDY_ID_KEY, sidFidTuple2.v1),
-                    Filters.eq(FILES_COLLECTION_FILE_ID_KEY, sidFidTuple2.v2)))
+        for (Tuple2 sidFidPair : commonSidFidPairs) {
+            filterConditions.add(Filters.and(Filters.eq(FILES_COLLECTION_STUDY_ID_KEY, sidFidPair.v1),
+                    Filters.eq(FILES_COLLECTION_FILE_ID_KEY, sidFidPair.v2)))
         }
         Bson filter = Filters.or(filterConditions)
 
-        Map<Tuple2, Integer> sidFidTuple2CountMap = mongoTemplate.getCollection(FILES_COLLECTION).find(filter)
+        Map<Tuple2, Integer> sidFidPairCountMap = mongoTemplate.getCollection(FILES_COLLECTION).find(filter)
                 .into(new ArrayList<>()).stream()
                 .map(doc -> new Tuple2(doc.get(FILES_COLLECTION_STUDY_ID_KEY),
                         doc.get(FILES_COLLECTION_FILE_ID_KEY)))
                 .collect(Collectors.toMap(Tuple2 -> Tuple2, count -> 1, Integer::sum))
 
-        return sidFidTuple2CountMap
+        return sidFidPairCountMap
     }
 
     Set<VariantStatsMongo> getRemediatedStats(Set<VariantStatsMongo> variantStatsSet, ValuesForNormalisation normalisedVals) {
