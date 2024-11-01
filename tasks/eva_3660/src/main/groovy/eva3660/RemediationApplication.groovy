@@ -108,12 +108,20 @@ class RemediationApplication implements CommandLineRunner {
             logger.info("Variant might require normalisation. variant_id: {}, variant_ref: {}, variant_alt: {}",
                     originalVariant.getId(), originalVariant.getReference(), originalVariant.getAlternate())
 
-            // TODO need to think a bit more about this: there are potentially multiple lists of secondary alternates,
-            //  one for each _file_
-            //  Currently normalisation would be applied to each file independently
-            //  Is there any difference compared to normalising all together?
-            List<String> secondaryAlternates = originalVariant.variantSources.stream().collect{ it.alternates }
-            String mafAllele = originalVariant.getVariantStatsMongo().getMafAllele()
+            // Each source file has its own list of secondary alternates, these need to be normalised indpendently.
+            // This also means that potentially more than one normalised document might be generated from one original
+            // document (and correspondingly multiple merges, etc.)
+            // TODO how does this work given that we know sid,fid pairs are not unique?
+            for (VariantSourceEntryMongo variantSource: originalVariant.variantSources) {
+                List<String> secondaryAlternates =  variantSource.alternates as List<String>
+                String mafAllele = null
+                for (VariantStatsMongo variantStats: originalVariant.variantStatsMongo) {
+                    // TODO get the _corresponding_ stats object & mafAllele
+                }
+            }
+
+            // TODO determine whether split is required, handle the split
+
             // Normalise all alleles and truncate common leading context allele if present
             ValuesForNormalisation normalisedValues = normaliser.normaliseAndTruncate(originalVariant.chromosome,
                     new ValuesForNormalisation(originalVariant.start, originalVariant.end, originalVariant.length,

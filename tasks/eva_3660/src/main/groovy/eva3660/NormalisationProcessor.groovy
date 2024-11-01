@@ -29,13 +29,18 @@ class NormalisationProcessor {
             allelesToNorm = [valsForNorm.reference, valsForNorm.alternate] + valsForNorm.secondaryAlternates
         }
         def (newStart, newEnd, newLength, newAlleles) = normalise(contig, valsForNorm.start, valsForNorm.end, valsForNorm.length, allelesToNorm)
-        if (allSameStart(newAlleles)) {
+        // Check final base before initial base when truncating, to mirror eva-pipeline load:
+        //  https://github.com/EBIvariation/eva-pipeline/blob/master/src/main/java/uk/ac/ebi/eva/pipeline/io/mappers/VariantVcfFactory.java#L185
+        if (allSameEnd(newAlleles)) {
+            (newEnd, newLength, newAlleles) = truncateRightmost(newEnd, newLength, newAlleles)
+        }
+        else if (allSameStart(newAlleles)) {
             (newStart, newLength, newAlleles) = truncateLeftmost(newStart, newLength, newAlleles)
         }
-        if (mafIsNull) {
-            return new ValuesForNormalisation(newStart, newEnd, newLength, newAlleles[0], newAlleles[1], null, newAlleles[3..-1])
-        }
-        return new ValuesForNormalisation(newStart, newEnd, newLength, newAlleles[0], newAlleles[1], newAlleles[2], newAlleles[3..-1])
+        String newReference = newAlleles.pop()
+        String newAlternate = newAlleles.pop()
+        String newMafAllele = mafIsNull ? null : newAlleles.pop()
+        return new ValuesForNormalisation(newStart, newEnd, newLength, newReference, newAlternate, newMafAllele, newAlleles)
     }
 
     /**

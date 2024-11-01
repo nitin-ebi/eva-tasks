@@ -47,13 +47,20 @@ class NormalisationTest {
     void testNormaliseAndTruncate() {
         def input = new ValuesForNormalisation(7678489, 7678500, 12, "ATTTATTT", "ATTT", "ATTT", ["ATTTATTTATTT"])
         // Initial T is truncated
-        def expectedOutput =new ValuesForNormalisation(7678482, 7678489, 8, "TTTA", "", "", ["TTTATTTA"])
+        def expectedOutput = new ValuesForNormalisation(7678482, 7678489, 8, "TTTA", "", "", ["TTTATTTA"])
+        assertEquals(expectedOutput, processor.normaliseAndTruncate("CM000683.2", input))
+
+        // Allows null mafAllele and no secondary alternates
+        input = new ValuesForNormalisation(7678489, 7678500, 12, "ATTTATTT", "ATTT", null, [])
+        expectedOutput = new ValuesForNormalisation(7678482, 7678489, 8, "TTTA", "",null, [])
         assertEquals(expectedOutput, processor.normaliseAndTruncate("CM000683.2", input))
     }
 
     @Test
     void testNormalisationComparedToBcftoolsNorm() {
-        // TODO
+        // TODO Check especially for:
+        //  - variants at position 1
+        //  - multiple alleles on one line
     }
 
 }
