@@ -2,11 +2,7 @@ package eva3660
 
 import com.mongodb.BasicDBObject
 import com.mongodb.client.MongoCollection
-import com.mongodb.client.model.Accumulators
-import com.mongodb.client.model.Aggregates
-import com.mongodb.client.model.Filters
-import com.mongodb.client.model.Projections
-import com.mongodb.client.model.Updates
+import com.mongodb.client.model.*
 import org.bson.BsonSerializationException
 import org.bson.Document
 import org.bson.conversions.Bson
@@ -31,8 +27,8 @@ import java.nio.file.Paths
 import java.util.regex.Pattern
 import java.util.stream.Collectors
 
+import static org.junit.Assert.assertTrue
 import static org.springframework.data.mongodb.core.query.Criteria.where
-
 
 @SpringBootApplication(exclude = [DataSourceAutoConfiguration.class])
 class RemediationApplication implements CommandLineRunner {
@@ -61,11 +57,13 @@ class RemediationApplication implements CommandLineRunner {
 
     private static Map<String, Integer> sidFidNumberOfSamplesMap = new HashMap<>()
     private static VariantStatsProcessor variantStatsProcessor = new VariantStatsProcessor()
+    private static String workingDir = ""
+    private static String dbName = ""
 
     @Override
     void run(String... args) throws Exception {
-        String workingDir = args[0]
-        String dbName = args[1]
+        workingDir = args[0]
+        dbName = args[1]
 
         // TODO find fasta file - either a parameter or a search...
         NormalisationProcessor normaliser = new NormalisationProcessor(Paths.get("fasta.fa"))
@@ -108,118 +106,168 @@ class RemediationApplication implements CommandLineRunner {
             logger.info("Variant might require normalisation. variant_id: {}, variant_ref: {}, variant_alt: {}",
                     originalVariant.getId(), originalVariant.getReference(), originalVariant.getAlternate())
 
-            // Each source file has its own list of secondary alternates, these need to be normalised indpendently.
+            // Each source file has its own list of secondary alternates, these need to be normalised independently.
             // This also means that potentially more than one normalised document might be generated from one original
-            // document (and correspondingly multiple merges, etc.)
-            // TODO how does this work given that we know sid,fid pairs are not unique?
-            for (VariantSourceEntryMongo variantSource: originalVariant.variantSources) {
-                List<String> secondaryAlternates =  variantSource.alternates as List<String>
-                String mafAllele = null
-                for (VariantStatsMongo variantStats: originalVariant.variantStatsMongo) {
-                    // TODO get the _corresponding_ stats object & mafAllele
+            // document, as the final normalised ID might differ depending on the secondary alternates.
+            Map<String, VariantDocument> variantIdToDocument = [:]
+            for (VariantSourceEntryMongo variantSource : originalVariant.getVariantSources()) {
+                remediateVariantForFile(originalVariant, variantSource, variantIdToDocument)
+            }
+
+            // At this point, we have one or more variant IDs (which may be same as the original ID)
+            // We proceed with the rest of the remediation for each of these independently
+            for (String newId : variantIdToDocument.keySet()) {
+                logger.info("Processing new ID : {}", newId)
+                if (originalVariant.getId().equals(newId)) {
+                    logger.info("Variant did not change from normalisation, skipping")
+                    continue
                 }
+                insertOrMergeRemediateVariant(originalVariant.getId(), newId, variantIdToDocument[newId])
             }
-
-            // TODO determine whether split is required, handle the split
-
-            // Normalise all alleles and truncate common leading context allele if present
-            ValuesForNormalisation normalisedValues = normaliser.normaliseAndTruncate(originalVariant.chromosome,
-                    new ValuesForNormalisation(originalVariant.start, originalVariant.end, originalVariant.length,
-                            originalVariant.reference, originalVariant.alternate, mafAllele, secondaryAlternates))
-
-            // create new id of variant
-            String newId = VariantDocument.buildVariantId(originalVariant.chromosome, normalisedValues.start, normalisedValues.reference.toUpperCase(),
-                    normalisedValues.alternate.toUpperCase())
-            logger.info("New id of the variant : {}", newId)
-            if (originalVariant.getId().equals(newId)) {
-                logger.info("Variant did not change from normalisation, skipping")
-                continue
-            }
-
-            // check if new id is present in db and get the corresponding variant
-            Query idQuery = new Query(where("_id").is(newId))
-            VariantDocument variantInDB = mongoTemplate.findOne(idQuery, VariantDocument.class, VARIANTS_COLLECTION)
-
-            // Check if there exists a variant in db that has the same id as newID
-            if (variantInDB == null) {
-                logger.warn("Variant with id {} not found in DB", newId)
-                remediateCaseNoIdCollision(originalVariant, newId, normalisedValues)
-                continue
-            }
-
-            logger.info("Found existing variant in DB with id: {} {}", newId, variantInDB)
-            // variant with new db present, needs to check for merging
-            Set<VariantSourceEntity> remediatedVariantFileSet = originalVariant.getVariantSources() != null ?
-                    originalVariant.getVariantSources() : new HashSet<>()
-            Set<VariantSourceEntity> variantInDBFileSet = variantInDB.getVariantSources() != null ?
-                    variantInDB.getVariantSources() : new HashSet<>()
-            Set<Tuple2> remediatedSidFidPairSet = remediatedVariantFileSet.stream()
-                    .map(vse -> new Tuple2(vse.getStudyId(), vse.getFileId()))
-                    .collect(Collectors.toSet())
-            Set<Tuple2> variantInDBSidFidPairSet = variantInDBFileSet.stream()
-                    .map(vse -> new Tuple2(vse.getStudyId(), vse.getFileId()))
-                    .collect(Collectors.toSet())
-
-            // take the common pairs of sid-fid between the remediated variant and the variant in db
-            Set<Tuple2> commonSidFidPairs = new HashSet<>(remediatedSidFidPairSet)
-            commonSidFidPairs.retainAll(variantInDBSidFidPairSet)
-
-            if (commonSidFidPairs.isEmpty()) {
-                logger.info("No common sid fid entries between remediated variant and variant in DB")
-                remediateCaseMergeAllSidFidAreDifferent(variantInDB, originalVariant, newId, normalisedValues)
-                continue
-            }
-
-            // check if there is any pair of sid and fid from common pair, for which there are more than one entry in files collection
-            Map<Tuple2, Integer> result = getSidFidPairNumberOfDocumentsMap(commonSidFidPairs)
-            Set<Tuple2> sidFidPairsWithGTOneEntry = result.entrySet().stream()
-                    .filter(entry -> entry.getValue() > 1)
-                    .map(entry -> entry.getKey())
-                    .collect(Collectors.toSet())
-            if (sidFidPairsWithGTOneEntry.isEmpty()) {
-                logger.info("All common sid fid entries has only one file entry")
-                Set<Tuple2> sidFidPairNotInDB = new HashSet<>(remediatedSidFidPairSet)
-                sidFidPairNotInDB.removeAll(commonSidFidPairs)
-                remediateCaseMergeAllCommonSidFidHasOneFile(variantInDB, originalVariant, sidFidPairNotInDB, newId, normalisedValues)
-                continue
-            }
-
-            logger.info("can't merge as sid fid common pair has more than 1 entry in file")
-            remediateCaseCantMerge(workingDir, sidFidPairsWithGTOneEntry, dbName, originalVariant)
         }
 
         // Finished processing
         System.exit(0)
     }
 
-    void remediateCaseNoIdCollision(VariantDocument originalVariant, String newId, ValuesForNormalisation normalisedVals) {
-        logger.info("case no id collision - processing variant: {}", originalVariant)
+    void remediateVariantForFile(VariantDocument originalVariant, VariantSourceEntryMongo variantSource,
+                                 Map<String, VariantDocument> variantIdToDocument) {
+        String fid = variantSource.getFileId()
+        String sid = variantSource.getStudyId()
+        List<String> secondaryAlternates = variantSource.getAlternates() as List<String>
+        VariantStatsMongo variantStats = null
+        String mafAllele = null
+        List<VariantStatsMongo> variantStatsWithFidAndSid = originalVariant.getVariantStatsMongo().stream().filter {
+            it.getFileId() == fid && it.getStudyId() == sid
+        }.collect(Collectors.toList())
+        if (variantStatsWithFidAndSid.size() > 1) {
+            // TODO Failure case - can't resolve which stats to use, can't remediate
+            return
+        }
+        if (variantStatsWithFidAndSid.size() == 1) {
+            variantStats = variantStatsWithFidAndSid.pop()
+            mafAllele = variantStats.getMafAllele()
+        }
+        // If no stats found with fid and sid of this source, assume stats were not computed and continue with
+        // remediation
+        // If we found a mafAllele and it's not consistent with secondary alternates, something's wrong
+        assertTrue("mafAllele ${mafAllele} for (${sid}, ${fid}) not found among secondary alternates" +
+                " ${secondaryAlternates.toString()}",
+                mafAllele == null || secondaryAlternates.contains(mafAllele))
 
-        Set<VariantSourceEntryMongo> remediatedFiles = getRemediatedFiles(originalVariant.getVariantSources(), normalisedVals)
-        Set<VariantStatsMongo> remediatedStats = getRemediatedStats(originalVariant.getVariantStatsMongo(), normalisedVals)
+        // Normalise all alleles and truncate common leading context allele if present
+        ValuesForNormalisation normalisedValues = normaliser.normaliseAndTruncate(originalVariant.getChromosome(),
+                new ValuesForNormalisation(originalVariant.getStart(), originalVariant.getEnd(), originalVariant.getLength(),
+                        originalVariant.getReference(), originalVariant.getAlternate(), mafAllele, secondaryAlternates))
 
-        VariantDocument remediatedVariant = new VariantDocument(originalVariant.getVariantType(), originalVariant.getChromosome(),
-                normalisedVals.start, normalisedVals.end, normalisedVals.length, normalisedVals.reference,
-                normalisedVals.alternate, null, originalVariant.getIds(), remediatedFiles)
-        remediatedVariant.setStats(remediatedStats)
+        // Create new variantId, file subdocument, and stats subdocument
+        String remediatedId = VariantDocument.buildVariantId(originalVariant.getChromosome(),
+                normalisedValues.getStart(), normalisedValues.getReference(), normalisedValues.getAlternate())
+        VariantSourceEntryMongo remediatedFile = new VariantSourceEntryMongo(fid, sid,
+                normalisedValues.getSecondaryAlternates() as String[],
+                (BasicDBObject) variantSource.getAttrs(), variantSource.getFormat(),
+                (BasicDBObject) variantSource.getSampleData())
+        VariantStatsMongo remediatedStats = new VariantStatsMongo(sid, fid, variantStats.getCohortId(),
+                variantStats.getMaf(), variantStats.getMgf(),
+                variantStats.getMafAllele() != null ? normalisedValues.getMafAllele() : null,
+                variantStats.getMgfGenotype(), variantStats.getMissingAlleles(),
+                variantStats.getMissingGenotypes(), variantStats.getNumGt())
 
-        // insert updated variant and delete the existing one
-        logger.info("case no id collision - insert new variant: {}", remediatedVariant)
-        mongoTemplate.save(remediatedVariant, VARIANTS_COLLECTION)
-        logger.info("case no id collision - delete original variant: {}", originalVariant)
-        mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalVariant.getId())), VARIANTS_COLLECTION)
-
-        // remediate Annotations
-        remediateAnnotations(originalVariant.getId(), newId)
+        if (variantIdToDocument.containsKey(remediatedId)) {
+            // Need to add this fid/sid's files and stats subdocuments to the variant already in the map
+            VariantDocument variantInMap = variantIdToDocument[remediatedId]
+            variantInMap.setSources(variantInMap.getVariantSources() + [remediatedFile])
+            variantInMap.setStats(variantInMap.getVariantStatsMongo() + [remediatedStats])
+        } else {
+            // Create a new remediated document, containing just the files and stats subdocuments with this
+            // fid/sid pair
+            VariantDocument remediatedVariant = new VariantDocument(
+                    originalVariant.getVariantType(), originalVariant.getChromosome(),
+                    normalisedValues.start, normalisedValues.end, normalisedValues.length,
+                    normalisedValues.reference, normalisedValues.alternate, null, originalVariant.getIds(),
+                    [remediatedFile]
+            )
+            remediatedVariant.setStats([remediatedStats])
+            variantIdToDocument[remediatedId] = remediatedVariant
+        }
     }
 
-    void remediateCaseMergeAllSidFidAreDifferent(VariantDocument variantInDB, VariantDocument originalVariant,
-                                                 String newId, ValuesForNormalisation normalisedVals) {
-        logger.info("case merge all sid fid are different - processing variant: {}", originalVariant)
+    void insertOrMergeRemediateVariant(String originalId, String remediatedId, VariantDocument remediatedVariant) {
+        // check if new id is present in db and get the corresponding variant
+        Query idQuery = new Query(where("_id").is(remediatedId))
+        VariantDocument variantInDB = mongoTemplate.findOne(idQuery, VariantDocument.class, VARIANTS_COLLECTION)
 
-        Set<VariantSourceEntryMongo> remediatedFiles = getRemediatedFiles(originalVariant.getVariantSources(), normalisedVals)
-        Set<VariantStatsMongo> variantStats = variantStatsProcessor.process(normalisedVals.reference,
-                normalisedVals.alternate, variantInDB.getVariantSources(), remediatedFiles, sidFidNumberOfSamplesMap)
+        // Check if there exists a variant in db that has the same id as newID
+        if (variantInDB == null) {
+            logger.warn("Variant with id {} not found in DB", remediatedId)
+            remediateCaseNoIdCollision(originalId, remediatedId, remediatedVariant)
+            return
+        }
+
+        logger.info("Found existing variant in DB with id: {} {}", remediatedId, variantInDB)
+        // variant with new db present, needs to check for merging
+        Set<VariantSourceEntity> remediatedVariantFileSet = remediatedVariant.getVariantSources() != null ?
+                remediatedVariant.getVariantSources() : new HashSet<>()
+        Set<VariantSourceEntity> variantInDBFileSet = variantInDB.getVariantSources() != null ?
+                variantInDB.getVariantSources() : new HashSet<>()
+        Set<Tuple2> remediatedSidFidPairSet = remediatedVariantFileSet.stream()
+                .map(vse -> new Tuple2(vse.getStudyId(), vse.getFileId()))
+                .collect(Collectors.toSet())
+        Set<Tuple2> variantInDBSidFidPairSet = variantInDBFileSet.stream()
+                .map(vse -> new Tuple2(vse.getStudyId(), vse.getFileId()))
+                .collect(Collectors.toSet())
+
+        // take the common pairs of sid-fid between the remediated variant and the variant in db
+        Set<Tuple2> commonSidFidPairs = new HashSet<>(remediatedSidFidPairSet)
+        commonSidFidPairs.retainAll(variantInDBSidFidPairSet)
+
+        if (commonSidFidPairs.isEmpty()) {
+            logger.info("No common sid fid entries between remediated variant and variant in DB")
+            remediateCaseMergeAllSidFidAreDifferent(variantInDB, remediatedId, remediatedVariant)
+            return
+        }
+
+        // check if there is any pair of sid and fid from common pair, for which there are more than one entry in files
+        // collection
+        Map<Tuple2, Integer> result = getSidFidPairNumberOfDocumentsMap(commonSidFidPairs)
+        Set<Tuple2> sidFidPairsWithGTOneEntry = result.entrySet().stream()
+                .filter(entry -> entry.getValue() > 1)
+                .map(entry -> entry.getKey())
+                .collect(Collectors.toSet())
+        if (sidFidPairsWithGTOneEntry.isEmpty()) {
+            logger.info("All common sid fid entries has only one file entry")
+            Set<Tuple2> sidFidPairNotInDB = new HashSet<>(remediatedSidFidPairSet)
+            sidFidPairNotInDB.removeAll(commonSidFidPairs)
+            remediateCaseMergeAllCommonSidFidHasOneFile(originalId, variantInDB, sidFidPairNotInDB, remediatedId,
+                    remediatedVariant)
+            return
+        }
+
+        logger.info("can't merge as sid fid common pair has more than 1 entry in file")
+        remediateCaseCantMerge(workingDir, sidFidPairsWithGTOneEntry, dbName, remediatedVariant)
+    }
+
+    void remediateCaseNoIdCollision(String originalId, String newId, VariantDocument remediatedVariant) {
+        // insert updated variant and delete the existing one
+        logger.info("case no id collision - insert new variant: {}", newId)
+        mongoTemplate.save(remediatedVariant, VARIANTS_COLLECTION)
+        logger.info("case no id collision - delete original variant: {}", originalId)
+        mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalId)), VARIANTS_COLLECTION)
+
+        remediateAnnotations(originalId, newId)
+    }
+
+    void remediateCaseMergeAllSidFidAreDifferent(String originalId, VariantDocument variantInDB, String newId,
+                                                 VariantDocument remediatedVariant) {
+        logger.info("case merge all sid fid are different - processing variant: {}", newId)
+
+        // Add all files within remediatedVariant
+        Set<VariantSourceEntryMongo> remediatedFiles = remediatedVariant.getVariantSources()
+
+        // Recompute stats
+        Set<VariantStatsMongo> variantStats = variantStatsProcessor.process(remediatedVariant.getReference(),
+                remediatedVariant.getAlternate(), variantInDB.getVariantSources(), remediatedFiles,
+                sidFidNumberOfSamplesMap)
 
         def updateOperations = [
                 Updates.push("files", new Document("\$each", remediatedFiles.stream()
@@ -233,15 +281,15 @@ class RemediationApplication implements CommandLineRunner {
         logger.info("case merge all sid fid are different - updates: {}", updateOperations)
         mongoTemplate.getCollection(VARIANTS_COLLECTION).updateOne(Filters.eq("_id", newId),
                 Updates.combine(updateOperations))
-        logger.info("case merge all sid fid are different - delete original variant: {}", originalVariant)
-        mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalVariant.getId())), VARIANTS_COLLECTION)
+        logger.info("case merge all sid fid are different - delete original variant: {}", originalId)
+        mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalId)), VARIANTS_COLLECTION)
 
-        remediateAnnotations(originalVariant.getId(), newId)
+        remediateAnnotations(originalId, newId)
     }
 
     void remediateCaseCantMerge(String workingDir, Set<Tuple2> sidFidPairsWithGtOneEntry, String dbName,
-                                VariantDocument originalVariant) {
-        logger.info("case can't merge variant - processing variant: {}", originalVariant)
+                                VariantDocument remediatedVariant) {
+        logger.info("case can't merge variant - processing variant: {}", remediatedVariant.getId())
 
         String nmcDirPath = Paths.get(workingDir, "non_merged_candidates").toString()
         File nmcDir = new File(nmcDirPath)
@@ -251,28 +299,29 @@ class RemediationApplication implements CommandLineRunner {
         String nmcFilePath = Paths.get(nmcDirPath, dbName + ".txt").toString()
         try (BufferedWriter nmcFile = new BufferedWriter(new FileWriter(nmcFilePath, true))) {
             for (Tuple2<String, String> p : sidFidPairsWithGtOneEntry) {
-                nmcFile.write(p.v1 + "," + p.v2 + "," + originalVariant.getId() + "\n")
+                nmcFile.write(p.v1 + "," + p.v2 + "," + remediatedVariant.getId() + "\n")
             }
         } catch (IOException e) {
-            logger.error("error writing case variant can't be merged in the file:  {}", originalVariant)
+            logger.error("error writing case variant can't be merged in the file:  {}", remediatedVariant.getId())
         }
     }
 
-    void remediateCaseMergeAllCommonSidFidHasOneFile(VariantDocument variantInDB, VariantDocument originalVariant,
+    void remediateCaseMergeAllCommonSidFidHasOneFile(String originalId, VariantDocument variantInDB,
                                                      Set<Tuple2> sidFidPairsNotInDB, String newId,
-                                                     ValuesForNormalisation normalisedVals) {
-        logger.info("case merge all common sid fid has one file - processing variant: {}", originalVariant)
+                                                     VariantDocument remediatedVariant) {
+        logger.info("case merge all common sid fid has one file - processing variant: {}", newId)
 
-        Set<VariantSourceEntryMongo> candidateFiles = originalVariant.getVariantSources().stream()
+        // Add only files that are not already in variantInDB
+        Set<VariantSourceEntryMongo> remediatedFiles = remediatedVariant.getVariantSources().stream()
                 .filter(vse -> sidFidPairsNotInDB.contains(new Tuple2(vse.getStudyId(), vse.getFileId())))
                 .collect(Collectors.toSet())
-        Set<VariantSourceEntryMongo> remediatedFiles = getRemediatedFiles(candidateFiles, normalisedVals)
 
+        // Recompute stats
         Set<VariantStatsMongo> variantStats = variantStatsProcessor.process(variantInDB.getReference(),
                 variantInDB.getAlternate(), variantInDB.getVariantSources(), remediatedFiles, sidFidNumberOfSamplesMap)
 
         def updateOperations = [
-                Updates.push("files", new Document("\$each", getRemediatedFiles(candidateFiles, normalisedVals)
+                Updates.push("files", new Document("\$each", remediatedFiles
                         .stream().map(file -> mongoTemplate.getConverter().convertToMongoType(file))
                         .collect(Collectors.toList()))),
                 Updates.set("st", variantStats.stream()
@@ -283,10 +332,10 @@ class RemediationApplication implements CommandLineRunner {
         logger.info("case merge all common sid fid has one file - updates: {}", updateOperations)
         mongoTemplate.getCollection(VARIANTS_COLLECTION).updateOne(Filters.eq("_id", newId),
                 Updates.combine(updateOperations))
-        logger.info("case merge all common sid fid has one file - delete original variant: {}", originalVariant)
-        mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalVariant.getId())), VARIANTS_COLLECTION)
+        logger.info("case merge all common sid fid has one file - delete original variant: {}", originalId)
+        mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalId)), VARIANTS_COLLECTION)
 
-        remediateAnnotations(originalVariant.getId(), newId)
+        remediateAnnotations(originalId, newId)
     }
 
     void remediateAnnotations(String originalVariantId, String newVariantId) {
@@ -362,30 +411,6 @@ class RemediationApplication implements CommandLineRunner {
                 .collect(Collectors.toMap(Tuple2 -> Tuple2, count -> 1, Integer::sum))
 
         return sidFidPairCountMap
-    }
-
-    Set<VariantStatsMongo> getRemediatedStats(Set<VariantStatsMongo> variantStatsSet, ValuesForNormalisation normalisedVals) {
-        Set<VariantStatsMongo> variantStatsMongoSet = new HashSet<>()
-        for (VariantStatsMongo stats : variantStatsSet) {
-            variantStatsMongoSet.add(new VariantStatsMongo(stats.getStudyId(), stats.getFileId(), stats.getCohortId(),
-                    stats.getMaf(), stats.getMgf(),
-                    stats.getMafAllele() != null ? normalisedVals.mafAllele : stats.getMafAllele(),
-                    stats.getMgfGenotype(),
-                    stats.getMissingAlleles(), stats.getMissingGenotypes(), stats.getNumGt()))
-        }
-
-        return variantStatsMongoSet
-    }
-
-    Set<VariantSourceEntryMongo> getRemediatedFiles(Set<VariantSourceEntryMongo> variantSourceSet, ValuesForNormalisation normalisedVals) {
-        Set<VariantSourceEntryMongo> variantSourceEntryMongoSet = new HashSet<>()
-        for (VariantSourceEntryMongo varSource : variantSourceSet) {
-            variantSourceEntryMongoSet.add(new VariantSourceEntryMongo(varSource.getFileId(), varSource.getStudyId(),
-                    normalisedVals.secondaryAlternates as String[], (BasicDBObject) varSource.getAttrs(),
-                    varSource.getFormat(), (BasicDBObject) varSource.getSampleData()))
-        }
-
-        return variantSourceEntryMongoSet
     }
 
     boolean isCandidateForNormalisation(VariantDocument variant) {
