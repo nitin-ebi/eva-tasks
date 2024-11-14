@@ -3,6 +3,7 @@ package eva3660
 import org.junit.jupiter.api.Test
 import org.opencb.commons.utils.CryptoUtils
 
+import java.nio.file.Paths
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
@@ -52,6 +53,14 @@ class RemediationApplicationIntegrationTest {
             Matcher matcher = pattern.matcher(str)
             assertFalse(matcher.find(), "Expected string not to match: " + str)
         }
+    }
+
+    @Test
+    void testgetFastaAndReportPaths() {
+        assertEquals(new Tuple2(
+                Paths.get("/path/to/fasta/mus_musculus/GCA_000001635.2/GCA_000001635.2.fa"),
+                Paths.get("/path/to/fasta/mus_musculus/GCA_000001635.2/GCA_000001635.2_assembly_report.txt")),
+                RemediationApplication.getFastaAndReportPaths("/path/to/fasta", "eva_mmusculus_grcm38"))
     }
 
     String buildVariantId(String chromosome, int start, String reference, String alternate) {

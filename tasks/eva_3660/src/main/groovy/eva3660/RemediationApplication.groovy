@@ -3,6 +3,7 @@ package eva3660
 import com.mongodb.BasicDBObject
 import com.mongodb.client.MongoCollection
 import com.mongodb.client.model.*
+import groovy.json.JsonSlurper
 import org.bson.BsonSerializationException
 import org.bson.Document
 import org.bson.conversions.Bson
@@ -57,16 +58,21 @@ class RemediationApplication implements CommandLineRunner {
 
     private static Map<String, Integer> sidFidNumberOfSamplesMap = new HashMap<>()
     private static VariantStatsProcessor variantStatsProcessor = new VariantStatsProcessor()
+    private static NormalisationProcessor normaliser = null
+    private static ContigRenamingProcessor contigRenamer = null
     private static String workingDir = ""
     private static String dbName = ""
+    private static String fastaDir = ""
 
     @Override
     void run(String... args) throws Exception {
         workingDir = args[0]
         dbName = args[1]
+        fastaDir = args[2]
 
-        // TODO find fasta file - either a parameter or a search...
-        NormalisationProcessor normaliser = new NormalisationProcessor(Paths.get("fasta.fa"))
+        def (fastaPath, assemblyReportPath) = getFastaAndReportPaths(fastaDir, dbName)
+        normaliser = new NormalisationProcessor(fastaPath)
+        contigRenamer = new ContigRenamingProcessor(assemblyReportPath)
 
         populateFilesIdAndNumberOfSamplesMap()
 
@@ -140,8 +146,10 @@ class RemediationApplication implements CommandLineRunner {
         List<VariantStatsMongo> variantStatsWithFidAndSid = originalVariant.getVariantStatsMongo().stream().filter {
             it.getFileId() == fid && it.getStudyId() == sid
         }.collect(Collectors.toList())
+        // If we can't resolve which stats to use based on fid & sid, can't remediate
         if (variantStatsWithFidAndSid.size() > 1) {
-            // TODO Failure case - can't resolve which stats to use, can't remediate
+            logger.error("Found multiple stats objects for ({}, {}), skipping", sid, fid)
+            writeFailureToResolveMafAllele(sid, fid, originalVariant.getId())
             return
         }
         if (variantStatsWithFidAndSid.size() == 1) {
@@ -151,12 +159,19 @@ class RemediationApplication implements CommandLineRunner {
         // If no stats found with fid and sid of this source, assume stats were not computed and continue with
         // remediation
         // If we found a mafAllele and it's not consistent with secondary alternates, something's wrong
-        assertTrue("mafAllele ${mafAllele} for (${sid}, ${fid}) not found among secondary alternates" +
-                " ${secondaryAlternates.toString()}",
-                mafAllele == null || secondaryAlternates.contains(mafAllele))
+        if (mafAllele != null && !secondaryAlternates.contains(mafAllele)) {
+            logger.error("mafAllele {} for ({}, {}) not found among secondary alternates {}, skipping",
+                    mafAllele, sid, fid, secondaryAlternates)
+            writeFailureToResolveMafAllele(sid, fid, originalVariant.getId())
+            return
+        }
+
+        // Convert the contig name to INSDC
+        // Used ONLY in normalisation, the original contig name will be retained in the DB
+        String insdcContig = contigRenamer.getInsdcAccession(originalVariant.getChromosome())
 
         // Normalise all alleles and truncate common leading context allele if present
-        ValuesForNormalisation normalisedValues = normaliser.normaliseAndTruncate(originalVariant.getChromosome(),
+        ValuesForNormalisation normalisedValues = normaliser.normaliseAndTruncate(insdcContig,
                 new ValuesForNormalisation(originalVariant.getStart(), originalVariant.getEnd(), originalVariant.getLength(),
                         originalVariant.getReference(), originalVariant.getAlternate(), mafAllele, secondaryAlternates))
 
@@ -377,6 +392,20 @@ class RemediationApplication implements CommandLineRunner {
         }
     }
 
+    private void writeFailureToResolveMafAllele(String sid, String fid, String originalId) {
+        String umaDirPath = Paths.get(workingDir, "unresolved_maf_allele").toString()
+        File umaDir = new File(umaDirPath)
+        if (!umaDir.exists()) {
+            umaDir.mkdirs()
+        }
+        String umaFilePath = Paths.get(umaDirPath, dbName + ".txt").toString()
+        try (BufferedWriter umaFile = new BufferedWriter(new FileWriter(umaFilePath, true))) {
+            umaFile.write(sid + "," + fid + "," + originalId + "\n")
+        } catch (IOException e) {
+            logger.error("error writing case unresolved MAF Allele in the file:  {}", originalId)
+        }
+    }
+
     private void populateFilesIdAndNumberOfSamplesMap() {
         def projectStage = Aggregates.project(Projections.fields(
                 Projections.computed("sid_fid", new Document("\$concat", Arrays.asList("\$sid", "_", "\$fid"))),
@@ -416,6 +445,30 @@ class RemediationApplication implements CommandLineRunner {
     boolean isCandidateForNormalisation(VariantDocument variant) {
         return (variant.getVariantType() != Variant.VariantType.SNV &&
                 (variant.getReference().size() > 1 || variant.getAlternate().size() > 1))
+    }
+
+    static Tuple2 getFastaAndReportPaths(String fastaDir, String dbName) {
+        // Get path to FASTA file and assembly report based on dbName
+        def (eva, taxonomyCode, assemblyCode) = dbName.split("_")
+        String scientificName = null
+        String assemblyAccession = null
+
+        JsonSlurper jsonParser = new JsonSlurper()
+        def results = jsonParser.parse(new URL("https://www.ebi.ac.uk/eva/webservices/rest/v1/meta/species/list"))["response"]["result"][0]
+        for (Map<String, String> result: results) {
+            if (result["assemblyCode"] == assemblyCode && result["taxonomyCode"] == taxonomyCode) {
+                scientificName = result["taxonomyScientificName"].toLowerCase().replace(" ", "_")
+                assemblyAccession = result["assemblyAccession"]
+                break
+            }
+        }
+        if (scientificName == null || assemblyAccession == null) {
+            throw new RuntimeException("Could not determine scientific name and assembly accession for db " + dbName)
+        }
+
+        // See here: https://github.com/EBIvariation/eva-common-pyutils/blob/master/ebi_eva_common_pyutils/reference/assembly.py#L61
+        return new Tuple2(Paths.get(fastaDir, scientificName, assemblyAccession, assemblyAccession + ".fa"),
+                Paths.get(fastaDir, scientificName, assemblyAccession, assemblyAccession + "_assembly_report.txt"))
     }
 
 }
