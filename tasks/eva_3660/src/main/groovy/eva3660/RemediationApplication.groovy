@@ -130,9 +130,6 @@ class RemediationApplication implements CommandLineRunner {
                 insertOrMergeRemediateVariant(originalVariant.getId(), newId, variantIdToDocument[newId])
             }
         }
-
-        // Finished processing
-        System.exit(0)
     }
 
     void remediateVariantForFile(VariantDocument originalVariant, VariantSourceEntryMongo variantSource,
@@ -140,12 +137,18 @@ class RemediationApplication implements CommandLineRunner {
         String fid = variantSource.getFileId()
         String sid = variantSource.getStudyId()
         List<String> secondaryAlternates = variantSource.getAlternates() as List<String>
+        if (secondaryAlternates == null) {
+            secondaryAlternates = []
+        }
         VariantStatsMongo variantStats = null
         String mafAllele = null
         List<VariantStatsMongo> variantStatsWithFidAndSid = originalVariant.getVariantStatsMongo().stream().filter {
             it.getFileId() == fid && it.getStudyId() == sid
         }.collect(Collectors.toList())
         // If we can't resolve which stats to use based on fid & sid, can't remediate
+        // TODO ideally we would also check:
+        //  - are the stats objects (particularly mafAllele) actually identical?
+        //  - would normalisation would actually have changed anything? (hard to say without know what the mafALlele is)
         if (variantStatsWithFidAndSid.size() > 1) {
             logger.error("Found multiple stats objects for ({}, {}), skipping", sid, fid)
             writeFailureToResolveMafAllele(sid, fid, originalVariant.getId())
@@ -192,19 +195,19 @@ class RemediationApplication implements CommandLineRunner {
         if (variantIdToDocument.containsKey(remediatedId)) {
             // Need to add this fid/sid's files and stats subdocuments to the variant already in the map
             VariantDocument variantInMap = variantIdToDocument[remediatedId]
-            variantInMap.setSources(variantInMap.getVariantSources() + [remediatedFile])
-            variantInMap.setStats(variantInMap.getVariantStatsMongo() + [remediatedStats])
+            variantInMap.setSources(variantInMap.getVariantSources() | ([remediatedFile] as Set))
+            variantInMap.setStats(variantInMap.getVariantStatsMongo() | ([remediatedStats] as Set))
         } else {
             // Create a new remediated document, containing just the files and stats subdocuments with this
             // fid/sid pair
             VariantDocument remediatedVariant = new VariantDocument(
                     originalVariant.getVariantType(), originalVariant.getChromosome(),
                     normalisedValues.start, normalisedValues.end, normalisedValues.length,
-                    normalisedValues.reference, normalisedValues.alternate, null, originalVariant.getIds(),
-                    [remediatedFile]
+                    normalisedValues.reference, normalisedValues.alternate, new HashSet<>(), originalVariant.getIds(),
+                    [remediatedFile] as Set
             )
             if (remediatedStats != null) {
-                remediatedVariant.setStats([remediatedStats])
+                remediatedVariant.setStats([remediatedStats] as Set)
             }
             variantIdToDocument[remediatedId] = remediatedVariant
         }
@@ -225,9 +228,9 @@ class RemediationApplication implements CommandLineRunner {
         logger.info("Found existing variant in DB with id: {} {}", remediatedId, variantInDB)
         // variant with new db present, needs to check for merging
         Set<VariantSourceEntity> remediatedVariantFileSet = remediatedVariant.getVariantSources() != null ?
-                remediatedVariant.getVariantSources() : new HashSet<>()
+                remediatedVariant.getVariantSources() : new HashSet<VariantSourceEntity>()
         Set<VariantSourceEntity> variantInDBFileSet = variantInDB.getVariantSources() != null ?
-                variantInDB.getVariantSources() : new HashSet<>()
+                variantInDB.getVariantSources() : new HashSet<VariantSourceEntity>()
         Set<Tuple2> remediatedSidFidPairSet = remediatedVariantFileSet.stream()
                 .map(vse -> new Tuple2(vse.getStudyId(), vse.getFileId()))
                 .collect(Collectors.toSet())
@@ -241,7 +244,7 @@ class RemediationApplication implements CommandLineRunner {
 
         if (commonSidFidPairs.isEmpty()) {
             logger.info("No common sid fid entries between remediated variant and variant in DB")
-            remediateCaseMergeAllSidFidAreDifferent(variantInDB, remediatedId, remediatedVariant)
+            remediateCaseMergeAllSidFidAreDifferent(originalId, variantInDB, remediatedId, remediatedVariant)
             return
         }
 

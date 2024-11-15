@@ -16,7 +16,7 @@ class NormalisationTest {
     @Before
     void setUp() throws Exception {
         processor = new NormalisationProcessor(Paths.get(
-                NormalisationTest.class.getResource("/grch38_chr21.fa").toURI()))
+                NormalisationTest.class.getResource("/fasta/homo_sapiens/GCA_000001405.15/GCA_000001405.15.fa").toURI()))
     }
 
     @After
