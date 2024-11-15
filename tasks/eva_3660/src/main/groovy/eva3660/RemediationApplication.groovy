@@ -28,7 +28,6 @@ import java.nio.file.Paths
 import java.util.regex.Pattern
 import java.util.stream.Collectors
 
-import static org.junit.Assert.assertTrue
 import static org.springframework.data.mongodb.core.query.Criteria.where
 
 @SpringBootApplication(exclude = [DataSourceAutoConfiguration.class])
@@ -152,16 +151,18 @@ class RemediationApplication implements CommandLineRunner {
             writeFailureToResolveMafAllele(sid, fid, originalVariant.getId())
             return
         }
+        // If we found exactly one stats object corresponding to fid & sid, we can proceed with remediation
         if (variantStatsWithFidAndSid.size() == 1) {
             variantStats = variantStatsWithFidAndSid.pop()
             mafAllele = variantStats.getMafAllele()
         }
         // If no stats found with fid and sid of this source, assume stats were not computed and continue with
         // remediation
-        // If we found a mafAllele and it's not consistent with secondary alternates, something's wrong
-        if (mafAllele != null && !secondaryAlternates.contains(mafAllele)) {
-            logger.error("mafAllele {} for ({}, {}) not found among secondary alternates {}, skipping",
-                    mafAllele, sid, fid, secondaryAlternates)
+        // If we found a mafAllele and it's not consistent with any alternates, something's wrong
+        if (mafAllele != null && (mafAllele != originalVariant.getAlternate()
+                && !secondaryAlternates.contains(mafAllele))) {
+            logger.error("mafAllele {} for ({}, {}) not found among any alternates {} or {}, skipping",
+                    mafAllele, sid, fid, originalVariant.getAlternate(), secondaryAlternates)
             writeFailureToResolveMafAllele(sid, fid, originalVariant.getId())
             return
         }
@@ -182,8 +183,8 @@ class RemediationApplication implements CommandLineRunner {
                 normalisedValues.getSecondaryAlternates() as String[],
                 (BasicDBObject) variantSource.getAttrs(), variantSource.getFormat(),
                 (BasicDBObject) variantSource.getSampleData())
-        VariantStatsMongo remediatedStats = new VariantStatsMongo(sid, fid, variantStats.getCohortId(),
-                variantStats.getMaf(), variantStats.getMgf(),
+        VariantStatsMongo remediatedStats = variantStats == null ? null : new VariantStatsMongo(sid, fid,
+                variantStats.getCohortId(), variantStats.getMaf(), variantStats.getMgf(),
                 variantStats.getMafAllele() != null ? normalisedValues.getMafAllele() : null,
                 variantStats.getMgfGenotype(), variantStats.getMissingAlleles(),
                 variantStats.getMissingGenotypes(), variantStats.getNumGt())
@@ -202,7 +203,9 @@ class RemediationApplication implements CommandLineRunner {
                     normalisedValues.reference, normalisedValues.alternate, null, originalVariant.getIds(),
                     [remediatedFile]
             )
-            remediatedVariant.setStats([remediatedStats])
+            if (remediatedStats != null) {
+                remediatedVariant.setStats([remediatedStats])
+            }
             variantIdToDocument[remediatedId] = remediatedVariant
         }
     }
