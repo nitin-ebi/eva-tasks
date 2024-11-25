@@ -77,13 +77,15 @@ class NormalisationProcessor {
         def newStart = start
         def newLength = length
         def newAlleles = alleles
-        def existEmptyAlleles = alleles.stream().any{it.size() }
+        // If already at the edge of the contig, do nothing
+        if (start == 1) {
+            return new Tuple(newStart, newLength, newAlleles)
+        }
+        def existEmptyAlleles = alleles.stream().any{ it.size() < 1 }
         if (existEmptyAlleles) {
             // Extend alleles 1 to the left
             newStart--
             newLength++
-            // Note VCF specifies what to do if position starts at 1, but AFAICT the normalisation algorithm does not
-            // See vt implementation: https://github.com/atks/vt/blob/master/variant_manip.cpp#L513
             def contextBase = fastaReader.getSequenceToUpperCase(contig, newStart, newStart)
             newAlleles = newAlleles.stream().collect { "${contextBase}${it}" }
         }

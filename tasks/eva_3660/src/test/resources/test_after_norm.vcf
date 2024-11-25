@@ -1,0 +1,10 @@
+##fileformat=VCFv4.3
+##FILTER=<ID=PASS,Description="All filters passed">
+##INFO=<ID=TAG,Type=String>
+##contig=<ID=CM000683.2,length=48129895>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+CM000683.2	1	.	N	C	.	PASS	TAG=Position
+CM000683.2	7678481	.	tttta	t	.	PASS	TAG=Version1
+CM000683.2	7678481	.	tttta	t	.	PASS	TAG=Version2
+CM000683.2	7678481	.	tttta	t,ttttatttA	.	PASS	TAG=Multi1
+CM000683.2	7678489	.	ATTTATTT	ATTT,C	.	PASS	TAG=Multi2
