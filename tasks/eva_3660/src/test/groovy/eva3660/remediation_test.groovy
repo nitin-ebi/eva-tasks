@@ -16,6 +16,7 @@ import uk.ac.ebi.eva.commons.models.mongo.entity.VariantDocument
 import java.nio.file.Paths
 import java.util.regex.Matcher
 import java.util.regex.Pattern
+import java.util.stream.Collectors
 
 import static org.junit.jupiter.api.Assertions.*
 
@@ -228,12 +229,91 @@ class RemediationApplicationIntegrationTest {
 
     @Test
     void testNormalisationRemediation_caseSingleNormalisedDocument() {
-        // TODO include stats and files with secondary alts, but no ID collisions
+        // Two sets of secondary alternates resulting in the same normalised primary alternate
+        List<Document> variants = [getVariantDocument(TYPE, CHR, REF, ALT, START, END, LENGTH,
+                [getVariantFiles("sid1", "fid1", ["ATTTATTTATTT"]),
+                 getVariantFiles("sid1", "fid2", ["ATTTATTTATTTATTT"])],
+                [getVariantStats("sid1", "fid1", "ATTTATTTATTT"),
+                 getVariantStats("sid1", "fid2", ALT)]
+        )]
+        List<Document> files = [getFileDocument("sid1", "fid1", "file1"),
+                                getFileDocument("sid1", "fid2", "file2")]
+        List<Document> annotations = [getAnnotationDocument(variants[0]["_id"])]
+
+        setUpEnvAndRunRemediationWithQC(files, variants, annotations, this.&qc_caseSingleNormalisedDocument)
+    }
+
+    void qc_caseSingleNormalisedDocument(MongoTemplate mongoTemplate, String workingDir) {
+        MongoCollection<VariantDocument> variantsColl = mongoTemplate.getCollection(RemediationApplication.VARIANTS_COLLECTION)
+        MongoCollection<Document> annotationsColl = mongoTemplate.getCollection(RemediationApplication.ANNOTATIONS_COLLECTION)
+
+        // Updated variant and annotation
+        assertEquals(0, variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([]).size())
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([]).size())
+        assertEquals(0, annotationsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}_82_82".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}_82_82".toString())).into([]).size())
+
+        VariantDocument variantDoc = variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([])
+                .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
+                .collect(Collectors.toList())[0]
+
+        // Updated secondary alts
+        assertEquals(["TTTATTTA", "TTTATTTATTTA"] as Set,
+                variantDoc.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
+
+        // Updated mafAllele
+        assertEquals(["TTTATTTA", NORM_ALT] as Set,
+                variantDoc.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
     }
 
     @Test
     void testNormalisationRemediation_caseMultipleNormalisedDocuments() {
-        // TODO include stats and files with secondary alts, but no ID collisions
+        // Two sets of secondary alternates, but resulting in different normalised primary alternates
+        List<Document> variants = [getVariantDocument(TYPE, CHR, REF, ALT, START, END, LENGTH,
+                [getVariantFiles("sid1", "fid1", ["ATTTATTTATTT"]),
+                 getVariantFiles("sid1", "fid2", ["C"])],
+                [getVariantStats("sid1", "fid1", "ATTTATTTATTT"),
+                 getVariantStats("sid1", "fid2", ALT)]
+        )]
+        List<Document> files = [getFileDocument("sid1", "fid1", "file1"),
+                                getFileDocument("sid1", "fid2", "file2")]
+        List<Document> annotations = [getAnnotationDocument(variants[0]["_id"])]
+
+        setUpEnvAndRunRemediationWithQC(files, variants, annotations, this.&qc_caseMultipleNormalisedDocuments)
+    }
+
+    void qc_caseMultipleNormalisedDocuments(MongoTemplate mongoTemplate, String workingDir) {
+        MongoCollection<VariantDocument> variantsColl = mongoTemplate.getCollection(RemediationApplication.VARIANTS_COLLECTION)
+        MongoCollection<Document> annotationsColl = mongoTemplate.getCollection(RemediationApplication.ANNOTATIONS_COLLECTION)
+
+        // Two each of variant and annotation documents
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([]).size())
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}_82_82".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}_82_82".toString())).into([]).size())
+
+        // Each variant has one file subdocument and one stats subdocument
+        VariantDocument variantDoc1 = variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([])
+                .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
+                .collect(Collectors.toList())[0]
+        assertEquals(1, variantDoc1.getVariantSources().size())
+        assertEquals(1, variantDoc1.getVariantStatsMongo().size())
+        // Secondary alternates and mafAllele are normalised
+        assertEquals(["TTTATTTA"] as Set,
+                variantDoc1.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
+        assertEquals(["TTTATTTA"] as Set,
+                variantDoc1.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
+
+        VariantDocument variantDoc2 = variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([])
+                .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
+                .collect(Collectors.toList())[0]
+        assertEquals(1, variantDoc2.getVariantSources().size())
+        assertEquals(1, variantDoc2.getVariantStatsMongo().size())
+        // Secondary alternates and mafAllele are not normalised
+        assertEquals(["C"] as Set,
+                variantDoc2.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
+        assertEquals([ALT] as Set,
+                variantDoc2.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
     }
 
     @Test
