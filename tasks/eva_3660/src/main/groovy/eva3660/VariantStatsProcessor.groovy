@@ -1,10 +1,12 @@
 package eva3660
 
 import com.mongodb.BasicDBObject
-import uk.ac.ebi.eva.commons.core.models.genotype.Genotype
+import org.opencb.biodata.models.feature.Genotype
 import uk.ac.ebi.eva.commons.models.data.VariantStats
 import uk.ac.ebi.eva.commons.models.mongo.entity.subdocuments.VariantSourceEntryMongo
 import uk.ac.ebi.eva.commons.models.mongo.entity.subdocuments.VariantStatsMongo
+
+import java.util.stream.Collectors
 
 // Taken from EVA-3667 with no changes
 class VariantStatsProcessor {

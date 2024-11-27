@@ -35,6 +35,8 @@ class RemediationApplicationIntegrationTest {
     private static final NORM_REF = "TTTA"
     private static final NORM_ALT = ""
     private static final NORM_START = 7678482
+    private static final NORM_END = 7678485
+    private static final NORM_LENGTH = 4
 
     def setUpEnvAndRunRemediationWithQC(List<Document> filesData, List<Document> variantsData,
                                         List<Document> annotationsData, def qcMethod) {
@@ -318,17 +320,114 @@ class RemediationApplicationIntegrationTest {
 
     @Test
     void testNormalisationRemediation_caseIdCollision_noCommonSidFid() {
-        // TODO test for just merge behaviour (no split)
+        List<Document> variants = [
+                // Variant needing normalisation
+                getVariantDocument(TYPE, CHR, REF, ALT, START, END, LENGTH,
+                        [getVariantFiles("sid1", "fid1", [])],
+                        [getVariantStats("sid1", "fid1", ALT)]),
+                // Existing variant with colliding ID
+                getVariantDocument(TYPE, CHR, NORM_REF, NORM_ALT, NORM_START, NORM_END, NORM_LENGTH,
+                        [getVariantFiles("sid2", "fid2", [NORM_ALT])],
+                        [getVariantStats("sid2", "fid2", null)])
+        ]
+        List<Document> files = [getFileDocument("sid1", "fid1", "file1"),
+                                getFileDocument("sid2", "fid2", "file2")]
+        List<Document> annotations = [getAnnotationDocument(variants[0]["_id"])]
+        setUpEnvAndRunRemediationWithQC(files, variants, annotations, this.&qc_caseIdCollision_noCommonSidFid)
+    }
+
+    void qc_caseIdCollision_noCommonSidFid(MongoTemplate mongoTemplate, String workingDir) {
+        MongoCollection<VariantDocument> variantsColl = mongoTemplate.getCollection(RemediationApplication.VARIANTS_COLLECTION)
+        MongoCollection<Document> annotationsColl = mongoTemplate.getCollection(RemediationApplication.ANNOTATIONS_COLLECTION)
+
+        // Updated variant and annotation
+        assertEquals(0, variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([]).size())
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([]).size())
+        assertEquals(0, annotationsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}_82_82".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}_82_82".toString())).into([]).size())
+
+        // Variant now has two files & stats subdocuments
+        VariantDocument variantDoc = variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([])
+                .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
+                .collect(Collectors.toList())[0]
+        assertEquals(2, variantDoc.getVariantSources().size())
+        assertEquals(2, variantDoc.getVariantStatsMongo().size())
     }
 
     @Test
     void testNormalisationRemediation_caseIdCollisionCommon_sidFidOneFile() {
-        // TODO test for just merge behaviour (no split)
+        List<Document> variants = [
+                // Variant needing normalisation
+                getVariantDocument(TYPE, CHR, REF, ALT, START, END, LENGTH,
+                        [getVariantFiles("sid1", "fid1", [])],
+                        [getVariantStats("sid1", "fid1", ALT)]),
+                // Existing variant with colliding ID
+                getVariantDocument(TYPE, CHR, NORM_REF, NORM_ALT, NORM_START, NORM_END, NORM_LENGTH,
+                        [getVariantFiles("sid1", "fid1", [])],
+                        [getVariantStats("sid1", "fid1", NORM_ALT)])
+        ]
+        List<Document> files = [getFileDocument("sid1", "fid1", "file1")]
+        List<Document> annotations = [getAnnotationDocument(variants[0]["_id"])]
+        setUpEnvAndRunRemediationWithQC(files, variants, annotations, this.&qc_caseIdCollision_sidFidOneFile)
+    }
+
+    void qc_caseIdCollision_sidFidOneFile(MongoTemplate mongoTemplate, String workingDir) {
+        MongoCollection<VariantDocument> variantsColl = mongoTemplate.getCollection(RemediationApplication.VARIANTS_COLLECTION)
+        MongoCollection<Document> annotationsColl = mongoTemplate.getCollection(RemediationApplication.ANNOTATIONS_COLLECTION)
+
+        // Updated variant and annotation
+        assertEquals(0, variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([]).size())
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([]).size())
+        assertEquals(0, annotationsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}_82_82".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}_82_82".toString())).into([]).size())
+
+        // Variant has single (normalised) file & stat subdocuments
+        VariantDocument variantDoc = variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([])
+                .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
+                .collect(Collectors.toList())[0]
+        assertEquals(1, variantDoc.getVariantSources().size())
+        assertEquals(1, variantDoc.getVariantStatsMongo().size())
+        assertEquals([] as Set,
+                variantDoc.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
+        assertEquals([NORM_ALT] as Set,
+                variantDoc.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
     }
 
     @Test
     void testNormalisationRemediation_caseIdCollisionCommon_sidFidMultipleFiles() {
-        // TODO test for just merge behaviour (no split)
+        List<Document> variants = [
+                // Variant needing normalisation
+                getVariantDocument(TYPE, CHR, REF, ALT, START, END, LENGTH,
+                        [getVariantFiles("sid1", "fid1", [])],
+                        [getVariantStats("sid1", "fid1", ALT)]),
+                // Existing variant with colliding ID
+                getVariantDocument(TYPE, CHR, NORM_REF, NORM_ALT, NORM_START, NORM_END, NORM_LENGTH,
+                        [getVariantFiles("sid1", "fid1", [])],
+                        [getVariantStats("sid1", "fid1", NORM_ALT)])
+        ]
+        // Two files with same sid/fid
+        List<Document> files = [getFileDocument("sid1", "fid1", "file1"),
+                                getFileDocument("sid1", "fid1", "file2")]
+        List<Document> annotations = [getAnnotationDocument(variants[0]["_id"]), getAnnotationDocument(variants[1]["_id"])]
+        setUpEnvAndRunRemediationWithQC(files, variants, annotations, this.&qc_caseIdCollisionCommon_sidFidMultipleFiles)
+    }
+
+    void qc_caseIdCollisionCommon_sidFidMultipleFiles(MongoTemplate mongoTemplate, String workingDir) {
+        MongoCollection<VariantDocument> variantsColl = mongoTemplate.getCollection(RemediationApplication.VARIANTS_COLLECTION)
+        MongoCollection<Document> annotationsColl = mongoTemplate.getCollection(RemediationApplication.ANNOTATIONS_COLLECTION)
+
+        // Variant and annotation not deleted
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([]).size())
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}_82_82".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}_82_82".toString())).into([]).size())
+
+        // assert the issue is logged in the file
+        File nonMergedVariantFile = new File(Paths.get(workingDir, "non_merged_candidates", DB_NAME + ".txt").toString())
+        assertTrue(nonMergedVariantFile.exists())
+        try (BufferedReader fileReader = new BufferedReader(new FileReader(nonMergedVariantFile))) {
+            assertEquals("sid1,fid1,${CHR}_${START}_${REF}_${ALT}".toString(), fileReader.readLine())
+        }
     }
 
     @Test

@@ -21,6 +21,7 @@ import org.springframework.data.mongodb.core.convert.DefaultMongoTypeMapper
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
+import org.springframework.data.mongodb.core.query.Update
 import uk.ac.ebi.eva.commons.models.data.Variant
 import uk.ac.ebi.eva.commons.models.data.VariantSourceEntity
 import uk.ac.ebi.eva.commons.models.mongo.entity.VariantDocument
@@ -126,9 +127,6 @@ class RemediationApplication implements CommandLineRunner {
                 continue
             }
 
-            // At this point, we have one or more variant IDs (which may be same as the original ID)
-            // We proceed with the rest of the remediation for each of these independently
-
             // If there is only one new document and its id is identical to the original, then nothing has changed
             // from normalisation and we can skip
             String originalId = originalVariant.getId()
@@ -139,16 +137,27 @@ class RemediationApplication implements CommandLineRunner {
                     continue
                 }
             }
-            // Otherwise remove the original variant completely
-            // Note this must happen before insertions/merges as we might need to insert new documents with the same id
-            logger.info("Remediation needed - delete original variant: {}", originalId)
-            mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalId)), VARIANTS_COLLECTION)
 
+            // At this point, we have one or more variant IDs (which may be same as the original ID) and associated
+            // split documents. Accumulate write operations to be committed at the end.
+            BulkOperations variantOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, VARIANTS_COLLECTION)
+
+            // Then insert new documents, merging with colliding IDs as needed
+            boolean executeRemediation = true
             for (String newId : variantIdToDocument.keySet()) {
                 logger.info("Processing new ID : {}", newId)
-                insertOrMergeRemediateVariant(originalId, newId, variantIdToDocument[newId])
+                boolean executeForThisId = insertOrMergeRemediateVariant(originalId, newId, variantIdToDocument[newId],
+                        variantOps)
+                executeRemediation = executeRemediation && executeForThisId
             }
-            remediateAnnotations(originalId, variantIdToDocument.keySet())
+
+            // At this point, if merges for all split documents are unambiguous, execute the operations
+            // and remediate annotations
+            if (executeRemediation) {
+                mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalId)), VARIANTS_COLLECTION)
+                variantOps.execute()
+                remediateAnnotations(originalId, variantIdToDocument.keySet())
+            }
         }
     }
 
@@ -166,9 +175,6 @@ class RemediationApplication implements CommandLineRunner {
             it.getFileId() == fid && it.getStudyId() == sid
         }.collect(Collectors.toList())
         // If we can't resolve which stats to use based on fid & sid, can't remediate
-        // TODO ideally we would also check:
-        //  - are the stats objects (particularly mafAllele) actually identical?
-        //  - would normalisation would actually have changed anything? (hard to say without know what the mafALlele is)
         if (variantStatsWithFidAndSid.size() > 1) {
             logger.error("Found multiple stats objects for ({}, {}), skipping", sid, fid)
             writeFailureToResolveMafAllele(sid, fid, originalVariant.getId())
@@ -240,16 +246,22 @@ class RemediationApplication implements CommandLineRunner {
         }
     }
 
-    void insertOrMergeRemediateVariant(String originalId, String remediatedId, VariantDocument remediatedVariant) {
+    /**
+     * Does not perform inserts or updates, but adds them to the bulk operations param.
+     * Returns true if we can proceed with the merging (i.e. fid/sid is unambiguous), false otherwise.
+     */
+    boolean insertOrMergeRemediateVariant(String originalId, String remediatedId, VariantDocument remediatedVariant,
+                                          BulkOperations variantOps) {
         // check if new id is present in db and get the corresponding variant
         Query idQuery = new Query(where("_id").is(remediatedId))
         VariantDocument variantInDB = mongoTemplate.findOne(idQuery, VariantDocument.class, VARIANTS_COLLECTION)
 
-        // Check if there exists a variant in db that has the same id as newID
-        if (variantInDB == null) {
+        // Check if there exists a variant in db that has the same id as newID, OR if the new ID is the same as the
+        // original (which will subsequently be removed)
+        if (variantInDB == null || remediatedId.equals(originalId)) {
             logger.warn("Variant with id {} not found in DB", remediatedId)
-            remediateCaseNoIdCollision(originalId, remediatedId, remediatedVariant)
-            return
+            remediateCaseNoIdCollision(remediatedId, remediatedVariant, variantOps)
+            return true
         }
 
         logger.info("Found existing variant in DB with id: {} {}", remediatedId, variantInDB)
@@ -271,8 +283,8 @@ class RemediationApplication implements CommandLineRunner {
 
         if (commonSidFidPairs.isEmpty()) {
             logger.info("No common sid fid entries between remediated variant and variant in DB")
-            remediateCaseMergeAllSidFidAreDifferent(originalId, variantInDB, remediatedId, remediatedVariant)
-            return
+            remediateCaseMergeAllSidFidAreDifferent(variantInDB, remediatedId, remediatedVariant, variantOps)
+            return true
         }
 
         // check if there is any pair of sid and fid from common pair, for which there are more than one entry in files
@@ -286,23 +298,23 @@ class RemediationApplication implements CommandLineRunner {
             logger.info("All common sid fid entries has only one file entry")
             Set<Tuple2> sidFidPairNotInDB = new HashSet<>(remediatedSidFidPairSet)
             sidFidPairNotInDB.removeAll(commonSidFidPairs)
-            remediateCaseMergeAllCommonSidFidHasOneFile(originalId, variantInDB, sidFidPairNotInDB, remediatedId,
-                    remediatedVariant)
-            return
+            remediateCaseMergeAllCommonSidFidHasOneFile(variantInDB, sidFidPairNotInDB, remediatedId, remediatedVariant, variantOps)
+            return true
         }
 
         logger.info("can't merge as sid fid common pair has more than 1 entry in file")
-        remediateCaseCantMerge(workingDir, sidFidPairsWithGTOneEntry, dbName, remediatedVariant)
+        remediateCaseCantMerge(originalId, workingDir, sidFidPairsWithGTOneEntry, dbName)
+        return false
     }
 
-    void remediateCaseNoIdCollision(String originalId, String newId, VariantDocument remediatedVariant) {
+    void remediateCaseNoIdCollision(String newId, VariantDocument remediatedVariant, BulkOperations variantOps) {
         // insert updated variant and delete the existing one
         logger.info("case no id collision - insert new variant: {}", newId)
-        mongoTemplate.save(remediatedVariant, VARIANTS_COLLECTION)
+        variantOps.insert(remediatedVariant)
     }
 
-    void remediateCaseMergeAllSidFidAreDifferent(String originalId, VariantDocument variantInDB, String newId,
-                                                 VariantDocument remediatedVariant) {
+    void remediateCaseMergeAllSidFidAreDifferent(VariantDocument variantInDB, String newId,
+                                                 VariantDocument remediatedVariant, BulkOperations variantOps) {
         logger.info("case merge all sid fid are different - processing variant: {}", newId)
 
         // Add all files within remediatedVariant
@@ -313,23 +325,20 @@ class RemediationApplication implements CommandLineRunner {
                 remediatedVariant.getAlternate(), variantInDB.getVariantSources(), remediatedFiles,
                 sidFidNumberOfSamplesMap)
 
-        def updateOperations = [
-                Updates.push("files", new Document("\$each", remediatedFiles.stream()
-                        .map(file -> mongoTemplate.getConverter().convertToMongoType(file))
-                        .collect(Collectors.toList()))),
-                Updates.set("st", variantStats.stream()
-                        .map(stat -> mongoTemplate.getConverter().convertToMongoType(stat))
-                        .collect(Collectors.toList()))
-        ]
+        Update updateOp = new Update()
+        updateOp.push("files", new Document("\$each", remediatedFiles.stream()
+                .map(file -> mongoTemplate.getConverter().convertToMongoType(file))
+                .collect(Collectors.toList())))
+        updateOp.set("st", variantStats.stream()
+                .map(stat -> mongoTemplate.getConverter().convertToMongoType(stat))
+                .collect(Collectors.toList()))
 
-        logger.info("case merge all sid fid are different - updates: {}", updateOperations)
-        mongoTemplate.getCollection(VARIANTS_COLLECTION).updateOne(Filters.eq("_id", newId),
-                Updates.combine(updateOperations))
+        logger.info("case merge all sid fid are different - updates: {}", updateOp)
+        variantOps.updateOne(new Query(where("_id").is(newId)), updateOp)
     }
 
-    void remediateCaseCantMerge(String workingDir, Set<Tuple2> sidFidPairsWithGtOneEntry, String dbName,
-                                VariantDocument remediatedVariant) {
-        logger.info("case can't merge variant - processing variant: {}", remediatedVariant.getId())
+    void remediateCaseCantMerge(String originalId, String workingDir, Set<Tuple2> sidFidPairsWithGtOneEntry, String dbName) {
+        logger.info("case can't merge variant - processing variant: {}", originalId)
 
         String nmcDirPath = Paths.get(workingDir, "non_merged_candidates").toString()
         File nmcDir = new File(nmcDirPath)
@@ -339,16 +348,16 @@ class RemediationApplication implements CommandLineRunner {
         String nmcFilePath = Paths.get(nmcDirPath, dbName + ".txt").toString()
         try (BufferedWriter nmcFile = new BufferedWriter(new FileWriter(nmcFilePath, true))) {
             for (Tuple2<String, String> p : sidFidPairsWithGtOneEntry) {
-                nmcFile.write(p.v1 + "," + p.v2 + "," + remediatedVariant.getId() + "\n")
+                nmcFile.write(p.v1 + "," + p.v2 + "," + originalId + "\n")
             }
         } catch (IOException e) {
-            logger.error("error writing case variant can't be merged in the file:  {}", remediatedVariant.getId())
+            logger.error("error writing case variant can't be merged in the file:  {}", originalId)
         }
     }
 
-    void remediateCaseMergeAllCommonSidFidHasOneFile(String originalId, VariantDocument variantInDB,
+    void remediateCaseMergeAllCommonSidFidHasOneFile(VariantDocument variantInDB,
                                                      Set<Tuple2> sidFidPairsNotInDB, String newId,
-                                                     VariantDocument remediatedVariant) {
+                                                     VariantDocument remediatedVariant, BulkOperations variantOps) {
         logger.info("case merge all common sid fid has one file - processing variant: {}", newId)
 
         // Add only files that are not already in variantInDB
@@ -360,18 +369,16 @@ class RemediationApplication implements CommandLineRunner {
         Set<VariantStatsMongo> variantStats = variantStatsProcessor.process(variantInDB.getReference(),
                 variantInDB.getAlternate(), variantInDB.getVariantSources(), remediatedFiles, sidFidNumberOfSamplesMap)
 
-        def updateOperations = [
-                Updates.push("files", new Document("\$each", remediatedFiles
-                        .stream().map(file -> mongoTemplate.getConverter().convertToMongoType(file))
-                        .collect(Collectors.toList()))),
-                Updates.set("st", variantStats.stream()
-                        .map(stat -> mongoTemplate.getConverter().convertToMongoType(stat))
-                        .collect(Collectors.toList()))
-        ]
+        Update updateOp = new Update()
+        updateOp.push("files", new Document("\$each", remediatedFiles.stream()
+                .map(file -> mongoTemplate.getConverter().convertToMongoType(file))
+                .collect(Collectors.toList())))
+        updateOp.set("st", variantStats.stream()
+                .map(stat -> mongoTemplate.getConverter().convertToMongoType(stat))
+                .collect(Collectors.toList()))
 
-        logger.info("case merge all common sid fid has one file - updates: {}", updateOperations)
-        mongoTemplate.getCollection(VARIANTS_COLLECTION).updateOne(Filters.eq("_id", newId),
-                Updates.combine(updateOperations))
+        logger.info("case merge all common sid fid has one file - updates: {}", updateOp)
+        variantOps.updateOne(new Query(where("_id").is(newId)), updateOp)
     }
 
     void remediateAnnotations(String originalVariantId, Set<String> newVariantIds) {
@@ -381,7 +388,7 @@ class RemediationApplication implements CommandLineRunner {
         boolean removeOriginalAnnotation = !newVariantIds.contains(originalVariantId)
 
         try {
-            BulkOperations ops = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ANNOTATIONS_COLLECTION)
+            BulkOperations annotationOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ANNOTATIONS_COLLECTION)
             List<Document> originalAnnotationsSet = mongoTemplate.getCollection(ANNOTATIONS_COLLECTION)
                     .find(originalAnnotationQuery.getQueryObject())
                     .into([])
@@ -391,17 +398,17 @@ class RemediationApplication implements CommandLineRunner {
                 for (String newVariantId : newVariantIds) {
                     Document newAnnotation = SerializationUtils.clone(annotation)
                     newAnnotation.put("_id", originalAnnotationId.replace(originalVariantId, newVariantId))
-                    ops.insert(newAnnotation)
+                    annotationOps.insert(newAnnotation)
                 }
                 // Remove old id, if needed
                 if (removeOriginalAnnotation) {
-                    ops.remove(Query.query(where("_id").is(originalAnnotationId)))
+                    annotationOps.remove(Query.query(where("_id").is(originalAnnotationId)))
                 }
             }
 
             // Write everything, ignoring duplicates
             try {
-                ops.execute()
+                annotationOps.execute()
             } catch (DuplicateKeyException ex) {
             }
         } catch (BsonSerializationException ex) {
