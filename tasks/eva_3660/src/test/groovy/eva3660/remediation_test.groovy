@@ -300,7 +300,7 @@ class RemediationApplicationIntegrationTest {
                 .collect(Collectors.toList())[0]
         assertEquals(1, variantDoc1.getVariantSources().size())
         assertEquals(1, variantDoc1.getVariantStatsMongo().size())
-        // Secondary alternates and mafAllele are normalised
+        // Secondary alternates and mafAllele are modified
         assertEquals(["TTTATTTA"] as Set,
                 variantDoc1.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
         assertEquals(["TTTATTTA"] as Set,
@@ -311,7 +311,7 @@ class RemediationApplicationIntegrationTest {
                 .collect(Collectors.toList())[0]
         assertEquals(1, variantDoc2.getVariantSources().size())
         assertEquals(1, variantDoc2.getVariantStatsMongo().size())
-        // Secondary alternates and mafAllele are not normalised
+        // Secondary alternates and mafAllele are not modified
         assertEquals(["C"] as Set,
                 variantDoc2.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
         assertEquals([ALT] as Set,
@@ -432,7 +432,59 @@ class RemediationApplicationIntegrationTest {
 
     @Test
     void testNormalisationRemediation_splitAndMergeInteraction() {
-        // TODO test one complicated case with split, merge & stats
+        List<Document> variants = [
+                // Variant needing normalisation:
+                // Two sets of secondary alternates, but resulting in different normalised primary alternates
+                getVariantDocument(TYPE, CHR, REF, ALT, START, END, LENGTH,
+                        [getVariantFiles("sid1", "fid1", ["ATTTATTTATTT"]),
+                         getVariantFiles("sid1", "fid2", ["C"])],
+                        [getVariantStats("sid1", "fid1", "ATTTATTTATTT"),
+                         getVariantStats("sid1", "fid2", ALT)]),
+                // Existing variant with colliding ID but no common sid/fid pair
+                getVariantDocument(TYPE, CHR, NORM_REF, NORM_ALT, NORM_START, NORM_END, NORM_LENGTH,
+                        [getVariantFiles("sid2", "fid2", [])],
+                        [getVariantStats("sid2", "fid2", NORM_ALT)])
+        ]
+        List<Document> files = [getFileDocument("sid1", "fid1", "file1"),
+                                getFileDocument("sid1", "fid2", "file2"),
+                                getFileDocument("sid2", "fid2", "file3")]
+        List<Document> annotations = [getAnnotationDocument(variants[0]["_id"]),
+                                      getAnnotationDocument(variants[1]["_id"])]
+
+        setUpEnvAndRunRemediationWithQC(files, variants, annotations, this.&qc_splitAndMergeInteraction)
+    }
+
+    void qc_splitAndMergeInteraction(MongoTemplate mongoTemplate, String workingDir) {
+        MongoCollection<VariantDocument> variantsColl = mongoTemplate.getCollection(RemediationApplication.VARIANTS_COLLECTION)
+        MongoCollection<Document> annotationsColl = mongoTemplate.getCollection(RemediationApplication.ANNOTATIONS_COLLECTION)
+
+        // Two each of variant & annotation documents
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([]).size())
+        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}_82_82".toString())).into([]).size())
+        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}_82_82".toString())).into([]).size())
+
+        // Variant with colliding ID has two each of file & stats subdocuments
+        VariantDocument variantDoc1 = variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([])
+                .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
+                .collect(Collectors.toList())[0]
+        assertEquals(2, variantDoc1.getVariantSources().size())
+        assertEquals(2, variantDoc1.getVariantStatsMongo().size())
+        assertEquals(["TTTATTTA"] as Set,
+                variantDoc1.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
+        assertEquals([NORM_ALT] as Set,
+                variantDoc1.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
+
+        // Other variant has one each of file & stats subdocument
+        VariantDocument variantDoc2 = variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([])
+                .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
+                .collect(Collectors.toList())[0]
+        assertEquals(1, variantDoc2.getVariantSources().size())
+        assertEquals(1, variantDoc2.getVariantStatsMongo().size())
+        assertEquals(["C"] as Set,
+                variantDoc2.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
+        assertEquals([ALT] as Set,
+                variantDoc2.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
     }
 
     String buildVariantId(String chromosome, int start, String reference, String alternate) {
