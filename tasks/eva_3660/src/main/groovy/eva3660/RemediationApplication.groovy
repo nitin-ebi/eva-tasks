@@ -45,9 +45,15 @@ class RemediationApplication implements CommandLineRunner {
     public static final String FILES_COLLECTION_STUDY_ID_KEY = "sid"
     public static final String FILES_COLLECTION_FILE_ID_KEY = "fid"
 
-    // Search for IDs that have either ref or alt longer than 1 base
+    // Search for IDs of indels
     // Ignore non-ACGTN alleles (*, <>), but do include alleles longer than 50 bases (encoded ids)
     public static final String REGEX_PATTERN = "" +
+            "([^_<>*\\s]_" +    // ref exactly 1 char, no alt
+            "\$)" +             // anchor on end of string
+            "|" +               // OR
+            "(__[^_<>*\\s]" +   // no ref, alt exactly 1 char
+            "\$)" +             // anchor on end of string
+            "|" +               // OR
             "([^_<>*\\s]{2,}" + // ref at least 2 chars
             "_[^_<>*\\s]*" +    // alt can be any length
             "\$)" +             // anchor on end of string
@@ -467,8 +473,7 @@ class RemediationApplication implements CommandLineRunner {
     }
 
     boolean isCandidateForNormalisation(VariantDocument variant) {
-        return (variant.getVariantType() != Variant.VariantType.SNV &&
-                (variant.getReference().size() > 1 || variant.getAlternate().size() > 1))
+        return variant.getVariantType() != Variant.VariantType.SNV
     }
 
     static Tuple2 getFastaAndReportPaths(String fastaDir, String dbName) {

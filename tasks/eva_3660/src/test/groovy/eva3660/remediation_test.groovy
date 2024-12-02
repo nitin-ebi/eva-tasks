@@ -110,13 +110,17 @@ class RemediationApplicationIntegrationTest {
                 buildVariantId("chr1", 77777777, "A", UPPERCASE_LARGE_SEQ),
                 buildVariantId("chr1", 77777777, UPPERCASE_LARGE_SEQ, "A"),
                 buildVariantId("chr1", 77777777, UPPERCASE_LARGE_SEQ, UPPERCASE_LARGE_SEQ),
+                buildVariantId("chr1", 77777777, "A", ""),
+                buildVariantId("chr1", 77777777, "", "g"),
                 buildVariantId("chr_1", 77777777, "AcG", "AgT"),
                 buildVariantId("chr_1", 77777777, "", "AgT"),
                 buildVariantId("chr_1", 77777777, "AcG", ""),
                 buildVariantId("chr_1", 77777777, "555", "555"),
                 buildVariantId("chr_1", 77777777, "A", UPPERCASE_LARGE_SEQ),
                 buildVariantId("chr_1", 77777777, UPPERCASE_LARGE_SEQ, "A"),
-                buildVariantId("chr_1", 77777777, UPPERCASE_LARGE_SEQ, UPPERCASE_LARGE_SEQ)
+                buildVariantId("chr_1", 77777777, UPPERCASE_LARGE_SEQ, UPPERCASE_LARGE_SEQ),
+                buildVariantId("chr_1", 77777777, "A", ""),
+                buildVariantId("chr_1", 77777777, "", "g")
         }
         for (String str : matchingStrings) {
             Matcher matcher = pattern.matcher(str)
@@ -125,13 +129,9 @@ class RemediationApplicationIntegrationTest {
 
         String[] notMatchingStrings = new String[] {
                 buildVariantId("chr1", 77777777, "A", "G"),
-                buildVariantId("chr1", 77777777, "A", ""),
-                buildVariantId("chr1", 77777777, "", "g"),
                 buildVariantId("chr1", 77777777, "A", "*"),
                 buildVariantId("chr1", 77777777, "A", "<INS>"),
                 buildVariantId("chr_1", 77777777, "A", "G"),
-                buildVariantId("chr_1", 77777777, "A", ""),
-                buildVariantId("chr_1", 77777777, "", "g"),
                 buildVariantId("chr_1", 77777777, "A", "*"),
                 buildVariantId("chr_1", 77777777, "A", "<INS>")
         }
