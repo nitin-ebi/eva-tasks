@@ -92,12 +92,13 @@ class RemediationApplication implements CommandLineRunner {
         MongoCollection<VariantDocument> variantsColl = mongoTemplate.getCollection(VARIANTS_COLLECTION)
 
         Query regexQuery = new Query(where("_id").regex(REGEX_PATTERN))
+        logger.info("{}", regexQuery)
         def mongoCursor = variantsColl.find(regexQuery.getQueryObject()).noCursorTimeout(true).iterator()
 
         // Iterate through each variant one by one
         while (mongoCursor.hasNext()) {
             counter++
-            if (counter % 10000 == 0) {
+            if (counter % 1000 == 0) {
                 logger.info("Processed {} variants", counter)
             }
             Document candidateDocument = mongoCursor.next()
@@ -105,7 +106,6 @@ class RemediationApplication implements CommandLineRunner {
             try {
                 // read the variant as a VariantDocument
                 originalVariant = mongoTemplate.getConverter().read(VariantDocument.class, candidateDocument)
-                logger.info("Processing Variant: {}", originalVariant)
             } catch (Exception e) {
                 logger.error("Exception while converting Bson document to Variant Document with _id: {} " +
                         "chr {} start {} ref {} alt {}. Exception: {}", candidateDocument.get("_id"),
@@ -165,6 +165,9 @@ class RemediationApplication implements CommandLineRunner {
                 remediateAnnotations(originalId, variantIdToDocument.keySet())
             }
         }
+
+        // Finished processing
+        System.exit(0)
     }
 
     void remediateVariantForFile(VariantDocument originalVariant, VariantSourceEntryMongo variantSource,
@@ -175,32 +178,6 @@ class RemediationApplication implements CommandLineRunner {
         if (secondaryAlternates == null) {
             secondaryAlternates = []
         }
-        VariantStatsMongo variantStats = null
-        String mafAllele = null
-        List<VariantStatsMongo> variantStatsWithFidAndSid = originalVariant.getVariantStatsMongo().stream().filter {
-            it.getFileId() == fid && it.getStudyId() == sid
-        }.collect(Collectors.toList())
-        // If we can't resolve which stats to use based on fid & sid, can't remediate
-        if (variantStatsWithFidAndSid.size() > 1) {
-            logger.error("Found multiple stats objects for ({}, {}), skipping", sid, fid)
-            writeFailureToResolveMafAllele(sid, fid, originalVariant.getId())
-            return
-        }
-        // If we found exactly one stats object corresponding to fid & sid, we can proceed with remediation
-        if (variantStatsWithFidAndSid.size() == 1) {
-            variantStats = variantStatsWithFidAndSid.pop()
-            mafAllele = variantStats.getMafAllele()
-        }
-        // If no stats found with fid and sid of this source, assume stats were not computed and continue with
-        // remediation
-        // If we found a mafAllele and it's not consistent with any alternates, something's wrong
-        if (mafAllele != null && (mafAllele != originalVariant.getAlternate()
-                && !secondaryAlternates.contains(mafAllele))) {
-            logger.error("mafAllele {} for ({}, {}) not found among any alternates {} or {}, skipping",
-                    mafAllele, sid, fid, originalVariant.getAlternate(), secondaryAlternates)
-            writeFailureToResolveMafAllele(sid, fid, originalVariant.getId())
-            return
-        }
 
         // Convert the contig name to INSDC
         // Used ONLY in normalisation, the original contig name will be retained in the DB
@@ -209,45 +186,30 @@ class RemediationApplication implements CommandLineRunner {
         // Normalise all alleles and truncate common leading context allele if present
         ValuesForNormalisation normalisedValues = normaliser.normaliseAndTruncate(insdcContig,
                 new ValuesForNormalisation(originalVariant.getStart(), originalVariant.getEnd(), originalVariant.getLength(),
-                        originalVariant.getReference(), originalVariant.getAlternate(), mafAllele, secondaryAlternates))
+                        originalVariant.getReference(), originalVariant.getAlternate(), secondaryAlternates))
 
-        // Create new variantId, file subdocument, and stats subdocument
+        // Create new variantId and file subdocument
         String remediatedId = VariantDocument.buildVariantId(originalVariant.getChromosome(),
                 normalisedValues.getStart(), normalisedValues.getReference(), normalisedValues.getAlternate())
         VariantSourceEntryMongo remediatedFile = new VariantSourceEntryMongo(fid, sid,
                 normalisedValues.getSecondaryAlternates() as String[],
                 (BasicDBObject) variantSource.getAttrs(), variantSource.getFormat(),
                 (BasicDBObject) variantSource.getSampleData())
-        VariantStatsMongo remediatedStats = variantStats == null ? null : new VariantStatsMongo(sid, fid,
-                variantStats.getCohortId(), variantStats.getMaf(), variantStats.getMgf(),
-                variantStats.getMafAllele() != null ? normalisedValues.getMafAllele() : null,
-                variantStats.getMgfGenotype(), variantStats.getMissingAlleles(),
-                variantStats.getMissingGenotypes(), variantStats.getNumGt())
 
         if (variantIdToDocument.containsKey(remediatedId)) {
-            // Need to add this fid/sid's files and stats subdocuments to the variant already in the map
+            // Need to add this fid/sid's files to the variant already in the map
             VariantDocument variantInMap = variantIdToDocument[remediatedId]
             Set<VariantSourceEntryMongo> newSources = variantInMap.getVariantSources()
             newSources.add(remediatedFile)
             variantInMap.setSources(newSources)
-
-            if (remediatedStats != null) {
-                Set<VariantStatsMongo> newStats = variantInMap.getVariantStatsMongo()
-                newStats.add(remediatedStats)
-                variantInMap.setStats(newStats)
-            }
         } else {
-            // Create a new remediated document, containing just the files and stats subdocuments with this
-            // fid/sid pair
+            // Create a new remediated document, containing just the files with this fid/sid pair
             VariantDocument remediatedVariant = new VariantDocument(
                     originalVariant.getVariantType(), originalVariant.getChromosome(),
                     normalisedValues.start, normalisedValues.end, normalisedValues.length,
                     normalisedValues.reference, normalisedValues.alternate, new HashSet<>(), originalVariant.getIds(),
                     [remediatedFile] as Set
             )
-            if (remediatedStats != null) {
-                remediatedVariant.setStats([remediatedStats] as Set)
-            }
             variantIdToDocument[remediatedId] = remediatedVariant
         }
     }
@@ -316,6 +278,10 @@ class RemediationApplication implements CommandLineRunner {
     void remediateCaseNoIdCollision(String newId, VariantDocument remediatedVariant, BulkOperations variantOps) {
         // insert updated variant and delete the existing one
         logger.info("case no id collision - insert new variant: {}", newId)
+        Set<VariantStatsMongo> variantStats = variantStatsProcessor.process(remediatedVariant.getReference(),
+                remediatedVariant.getAlternate(), [] as Set, remediatedVariant.getVariantSources(),
+                sidFidNumberOfSamplesMap)
+        remediatedVariant.setStats(variantStats)
         variantOps.insert(remediatedVariant)
     }
 
@@ -419,20 +385,6 @@ class RemediationApplication implements CommandLineRunner {
             }
         } catch (BsonSerializationException ex) {
             logger.error("Exception occurred while trying to remediate annotation for variant: {}", originalVariantId)
-        }
-    }
-
-    private void writeFailureToResolveMafAllele(String sid, String fid, String originalId) {
-        String umaDirPath = Paths.get(workingDir, "unresolved_maf_allele").toString()
-        File umaDir = new File(umaDirPath)
-        if (!umaDir.exists()) {
-            umaDir.mkdirs()
-        }
-        String umaFilePath = Paths.get(umaDirPath, dbName + ".txt").toString()
-        try (BufferedWriter umaFile = new BufferedWriter(new FileWriter(umaFilePath, true))) {
-            umaFile.write(sid + "," + fid + "," + originalId + "\n")
-        } catch (IOException e) {
-            logger.error("error writing case unresolved MAF Allele in the file:  {}", originalId)
         }
     }
 

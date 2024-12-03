@@ -61,14 +61,14 @@ class NormalisationTest {
 
     @Test
     void testNormaliseAndTruncate() {
-        def input = new ValuesForNormalisation(7678489, 7678500, 12, "ATTTATTT", "ATTT", "ATTT", ["ATTTATTTATTT"])
+        def input = new ValuesForNormalisation(7678489, 7678500, 12, "ATTTATTT", "ATTT",["ATTTATTTATTT"])
         // Initial T is truncated
-        def expectedOutput = new ValuesForNormalisation(7678482, 7678489, 8, "TTTA", "", "", ["TTTATTTA"])
+        def expectedOutput = new ValuesForNormalisation(7678482, 7678489, 8, "TTTA", "", ["TTTATTTA"])
         assertEquals(expectedOutput, processor.normaliseAndTruncate("CM000683.2", input))
 
         // Allows null mafAllele and no secondary alternates
-        input = new ValuesForNormalisation(7678489, 7678500, 12, "ATTTATTT", "ATTT", null, [])
-        expectedOutput = new ValuesForNormalisation(7678482, 7678489, 8, "TTTA", "",null, [])
+        input = new ValuesForNormalisation(7678489, 7678500, 12, "ATTTATTT", "ATTT", [])
+        expectedOutput = new ValuesForNormalisation(7678482, 7678489, 8, "TTTA", "", [])
         assertEquals(expectedOutput, processor.normaliseAndTruncate("CM000683.2", input))
     }
 

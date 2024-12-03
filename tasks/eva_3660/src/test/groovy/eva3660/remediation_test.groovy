@@ -45,7 +45,6 @@ class RemediationApplicationIntegrationTest {
         String workingDir = resourceDir + "/test_run"
         String fastaDir = resourceDir + "/fasta"
         File nmcFile = new File(Paths.get(workingDir, "/non_merged_candidates/", DB_NAME + ".txt").toString())
-        File umaFile = new File(Paths.get(workingDir, "/unresolved_maf_allele/", DB_NAME + ".txt").toString())
 
         // Removing existing data and setup DB with test Data
         AnnotationConfigApplicationContext context = getApplicationContext(testPropertiesFile, DB_NAME)
@@ -58,9 +57,6 @@ class RemediationApplicationIntegrationTest {
         mongoTemplate.getCollection(RemediationApplication.ANNOTATIONS_COLLECTION).drop()
         if (nmcFile.exists()) {
             nmcFile.delete()
-        }
-        if (umaFile.exists()) {
-            umaFile.delete()
         }
         if (filesData != null && !filesData.isEmpty()) {
             mongoTemplate.getCollection(RemediationApplication.FILES_COLLECTION).insertMany(filesData)
@@ -150,36 +146,6 @@ class RemediationApplicationIntegrationTest {
     }
 
     @Test
-    void testNormalisationRemediation_caseMultipleStatsForSidFid() {
-        // Single variant with multiple stats objects for the same sid/fid pair can't be remediated
-        List<Document> variants = [getVariantDocument(TYPE, CHR, REF, ALT, START, END, LENGTH,
-                [getVariantFiles("sid1", "fid1", null), getVariantFiles("sid1", "fid1", null)],
-                [getVariantStats("sid1", "fid1", ALT), getVariantStats("sid1", "fid1", ALT)]
-        )]
-        List<Document> files = [getFileDocument("sid1", "fid1", "file1"),
-                                getFileDocument("sid1", "fid1", "file2")]
-        List<Document> annotations = [getAnnotationDocument(variants[0]["_id"])]
-
-        setUpEnvAndRunRemediationWithQC(files, variants, annotations, this.&qc_caseMultipleStatsForSidFid)
-    }
-
-    void qc_caseMultipleStatsForSidFid(MongoTemplate mongoTemplate, String workingDir) {
-        MongoCollection<VariantDocument> variantsColl = mongoTemplate.getCollection(RemediationApplication.VARIANTS_COLLECTION)
-        MongoCollection<Document> annotationsColl = mongoTemplate.getCollection(RemediationApplication.ANNOTATIONS_COLLECTION)
-
-        // No change for variant or annotation
-        assertEquals(1, variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([]).size())
-        assertEquals(1, annotationsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}_82_82".toString())).into([]).size())
-
-        // assert the issue is logged in the file
-        File unresolvedMafAlleleFile = new File(Paths.get(workingDir, "unresolved_maf_allele", DB_NAME + ".txt").toString())
-        assertTrue(unresolvedMafAlleleFile.exists())
-        try (BufferedReader fileReader = new BufferedReader(new FileReader(unresolvedMafAlleleFile))) {
-            assertEquals("sid1,fid1,${CHR}_${START}_${REF}_${ALT}".toString(), fileReader.readLine())
-        }
-    }
-
-    @Test
     void testNormalisationRemediation_caseNoStatsForSidFid() {
         // Single variant with no stats object can be remediated
         List<Document> variants = [getVariantDocument(TYPE, CHR, REF, ALT, START, END, LENGTH,
@@ -258,14 +224,11 @@ class RemediationApplicationIntegrationTest {
         VariantDocument variantDoc = variantsColl.find(Filters.eq("_id", "${CHR}_${NORM_START}_${NORM_REF}_${NORM_ALT}".toString())).into([])
                 .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
                 .collect(Collectors.toList())[0]
-
+        assertEquals(2, variantDoc.getVariantSources().size())
+        assertEquals(2, variantDoc.getVariantStatsMongo().size())
         // Updated secondary alts
         assertEquals(["TTTATTTA", "TTTATTTATTTA"] as Set,
                 variantDoc.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
-
-        // Updated mafAllele
-        assertEquals(["TTTATTTA", NORM_ALT] as Set,
-                variantDoc.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
     }
 
     @Test
@@ -300,22 +263,18 @@ class RemediationApplicationIntegrationTest {
                 .collect(Collectors.toList())[0]
         assertEquals(1, variantDoc1.getVariantSources().size())
         assertEquals(1, variantDoc1.getVariantStatsMongo().size())
-        // Secondary alternates and mafAllele are modified
+        // Secondary alternates are modified
         assertEquals(["TTTATTTA"] as Set,
                 variantDoc1.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
-        assertEquals(["TTTATTTA"] as Set,
-                variantDoc1.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
 
         VariantDocument variantDoc2 = variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([])
                 .stream().map(doc -> mongoTemplate.getConverter().read(VariantDocument.class, doc))
                 .collect(Collectors.toList())[0]
         assertEquals(1, variantDoc2.getVariantSources().size())
         assertEquals(1, variantDoc2.getVariantStatsMongo().size())
-        // Secondary alternates and mafAllele are not modified
+        // Secondary alternates are not modified
         assertEquals(["C"] as Set,
                 variantDoc2.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
-        assertEquals([ALT] as Set,
-                variantDoc2.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
     }
 
     @Test
@@ -389,8 +348,6 @@ class RemediationApplicationIntegrationTest {
         assertEquals(1, variantDoc.getVariantStatsMongo().size())
         assertEquals([] as Set,
                 variantDoc.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
-        assertEquals([NORM_ALT] as Set,
-                variantDoc.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
     }
 
     @Test
@@ -472,8 +429,6 @@ class RemediationApplicationIntegrationTest {
         assertEquals(2, variantDoc1.getVariantStatsMongo().size())
         assertEquals(["TTTATTTA"] as Set,
                 variantDoc1.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
-        assertEquals([NORM_ALT] as Set,
-                variantDoc1.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
 
         // Other variant has one each of file & stats subdocument
         VariantDocument variantDoc2 = variantsColl.find(Filters.eq("_id", "${CHR}_${START}_${REF}_${ALT}".toString())).into([])
@@ -483,8 +438,6 @@ class RemediationApplicationIntegrationTest {
         assertEquals(1, variantDoc2.getVariantStatsMongo().size())
         assertEquals(["C"] as Set,
                 variantDoc2.getVariantSources().stream().collect{ it.getAlternates() }.flatten().toSet())
-        assertEquals([ALT] as Set,
-                variantDoc2.getVariantStatsMongo().stream().collect{it.getMafAllele() }.toSet())
     }
 
     String buildVariantId(String chromosome, int start, String reference, String alternate) {

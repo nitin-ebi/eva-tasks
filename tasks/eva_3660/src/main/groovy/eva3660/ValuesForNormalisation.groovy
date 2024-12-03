@@ -10,17 +10,15 @@ class ValuesForNormalisation {
     final int length
     final String reference
     final String alternate
-    final String mafAllele
     final List<String> secondaryAlternates
 
-    ValuesForNormalisation(int start, int end, int length, String reference, String alternate, String mafAllele,
+    ValuesForNormalisation(int start, int end, int length, String reference, String alternate,
                            List<String> secondaryAlternates) {
         this.start = start
         this.end = end
         this.length = length
         this.reference = reference
         this.alternate = alternate
-        this.mafAllele = mafAllele
         this.secondaryAlternates = secondaryAlternates
     }
 
@@ -30,13 +28,13 @@ class ValuesForNormalisation {
         other = (ValuesForNormalisation)other
         return this.start == other.start && this.end == other.end && this.length == other.length
                 && this.reference.equals(other.reference) && this.alternate.equals(other.alternate)
-                && this.mafAllele == other.mafAllele && this.secondaryAlternates.equals(other.secondaryAlternates)
+                && this.secondaryAlternates.equals(other.secondaryAlternates)
     }
 
     @Override
     String toString() {
         return "ValuesForNormalisation(start=$start, end=$end, length=$length, reference=$reference," +
-                " alternate=$alternate, mafAllele=$mafAllele, secondaryAlternates=${secondaryAlternates.toString()}"
+                " alternate=$alternate, secondaryAlternates=${secondaryAlternates.toString()}"
     }
 
 }
