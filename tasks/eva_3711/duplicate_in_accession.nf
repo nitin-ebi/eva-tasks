@@ -23,6 +23,7 @@ params.fasta=''
 params.report=''
 params.monitor_duplicate_accessions=''
 params.accession_properties=''
+params.email=''
 
 
 workflow {
@@ -98,6 +99,6 @@ process detect_duplicates {
 
     script:
     """
-    $params.python $params.monitor_duplicate_accessions -p $params.accession_properties -s $params.study -o $params.output_dir -e eva-dev@ebi.ac.uk submittedVariantEntity
+    $params.python $params.monitor_duplicate_accessions -p $params.accession_properties -s $params.study -o $params.output_dir -e $params.email submittedVariantEntity
     """
 }
