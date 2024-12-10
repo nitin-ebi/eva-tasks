@@ -358,6 +358,7 @@ class RemediationApplication implements CommandLineRunner {
         String escapedOriginalVariantId = Pattern.quote(originalVariantId)
         Query originalAnnotationQuery = new Query(where("_id").regex("^" + escapedOriginalVariantId + ".*"))
         boolean removeOriginalAnnotation = !newVariantIds.contains(originalVariantId)
+        boolean hasWrites = false
 
         try {
             BulkOperations annotationOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ANNOTATIONS_COLLECTION)
@@ -371,6 +372,7 @@ class RemediationApplication implements CommandLineRunner {
                     Document newAnnotation = SerializationUtils.clone(annotation)
                     newAnnotation.put("_id", originalAnnotationId.replace(originalVariantId, newVariantId))
                     annotationOps.insert(newAnnotation)
+                    hasWrites = true
                 }
                 // Remove old id, if needed
                 if (removeOriginalAnnotation) {
@@ -380,7 +382,9 @@ class RemediationApplication implements CommandLineRunner {
 
             // Write everything, ignoring duplicates
             try {
-                annotationOps.execute()
+                if (hasWrites) {
+                    annotationOps.execute()
+                }
             } catch (DuplicateKeyException ex) {
             }
         } catch (BsonSerializationException ex) {
