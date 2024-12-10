@@ -160,6 +160,7 @@ class RemediationApplication implements CommandLineRunner {
             // At this point, if merges for all split documents are unambiguous, execute the operations
             // and remediate annotations
             if (executeRemediation) {
+                logger.info("Executing remediation - delete original variant: {}", originalId)
                 mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalId)), VARIANTS_COLLECTION)
                 variantOps.execute()
                 remediateAnnotations(originalId, variantIdToDocument.keySet())
