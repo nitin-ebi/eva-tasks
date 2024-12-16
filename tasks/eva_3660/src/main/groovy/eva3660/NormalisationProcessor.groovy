@@ -86,11 +86,13 @@ class NormalisationProcessor {
     }
 
     private boolean allSameEnd(List<String> alleles) {
-        return alleles.stream().collect{it[-1] }.toSet().size() == 1
+        return alleles.stream().noneMatch { it.size() == 0 }
+                && alleles.stream().collect{it[-1] }.toSet().size() == 1
     }
 
     private boolean allSameStart(List<String> alleles) {
-        return alleles.stream().collect{it[0] }.toSet().size() == 1
+        return alleles.stream().noneMatch { it.size() == 0 }
+                && alleles.stream().collect{it[0] }.toSet().size() == 1
     }
 
     private boolean allLengthAtLeastTwo(List<String> alleles) {

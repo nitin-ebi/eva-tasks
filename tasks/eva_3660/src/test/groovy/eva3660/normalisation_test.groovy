@@ -51,9 +51,14 @@ class NormalisationTest {
                 processor.normalise("CM000683.2", 7678489, 7678496, 8, ["ATTTATTT", "ATTT", "C"]))
 
         // Variant at position 1
-        // In VCF: TAG=Position
+        // In VCF: TAG=Position1
         assertEquals(new Tuple(1, 1, 1, ["N", "C"]),
                 processor.normalise("CM000683.2", 1, 2, 2, ["NN", "CN"]))
+
+        // Empty allele at position 1
+        // In VCF: TAG=Position2
+        assertEquals(new Tuple(1, 2, 2, ["", "AT"]),
+                processor.normalise("CM000683.2", 1, 2, 2, ["", "AT"]))
 
         // Run bcftools norm to compare
         runBcfToolsNorm()

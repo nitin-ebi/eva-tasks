@@ -160,6 +160,7 @@ class RemediationApplication implements CommandLineRunner {
             // At this point, if merges for all split documents are unambiguous, execute the operations
             // and remediate annotations
             if (executeRemediation) {
+                logger.info("Executing remediation - delete original variant: {}", originalId)
                 mongoTemplate.remove(Query.query(Criteria.where("_id").is(originalId)), VARIANTS_COLLECTION)
                 variantOps.execute()
                 remediateAnnotations(originalId, variantIdToDocument.keySet())
@@ -358,6 +359,7 @@ class RemediationApplication implements CommandLineRunner {
         String escapedOriginalVariantId = Pattern.quote(originalVariantId)
         Query originalAnnotationQuery = new Query(where("_id").regex("^" + escapedOriginalVariantId + ".*"))
         boolean removeOriginalAnnotation = !newVariantIds.contains(originalVariantId)
+        boolean hasWrites = false
 
         try {
             BulkOperations annotationOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ANNOTATIONS_COLLECTION)
@@ -371,6 +373,7 @@ class RemediationApplication implements CommandLineRunner {
                     Document newAnnotation = SerializationUtils.clone(annotation)
                     newAnnotation.put("_id", originalAnnotationId.replace(originalVariantId, newVariantId))
                     annotationOps.insert(newAnnotation)
+                    hasWrites = true
                 }
                 // Remove old id, if needed
                 if (removeOriginalAnnotation) {
@@ -380,7 +383,9 @@ class RemediationApplication implements CommandLineRunner {
 
             // Write everything, ignoring duplicates
             try {
-                annotationOps.execute()
+                if (hasWrites) {
+                    annotationOps.execute()
+                }
             } catch (DuplicateKeyException ex) {
             }
         } catch (BsonSerializationException ex) {
