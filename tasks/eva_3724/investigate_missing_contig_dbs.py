@@ -100,6 +100,11 @@ class DBMissingContig:
                     continue
                 sp_line = line.strip().split('\t')
                 accepted_names = {sp_line[0], sp_line[4], sp_line[6], sp_line[9]}
+                # Add any other columns as valid alias
+                if len(sp_line) > 9:
+                    for val in sp_line:
+                        if val:
+                            accepted_names.add(val)
                 if 'na' in accepted_names:
                     accepted_names.remove('na')
                 for name in accepted_names:
@@ -118,24 +123,31 @@ class DBMissingContig:
         return name_in_fasta
 
     def get_chromosome_names(self):
-        chromosome_names = set()
-        for chr_dict in self.mongo_database['variants_2_0'].aggregate([{"$group": {'_id':'$chr'}}]):
-            chromosome_names.add(chr_dict.get('_id'))
+        chromosome_names = {}
+        pipeline = [
+            {"$group": {'_id':'$chr', "projects": {"$addToSet": "$files.sid"}}},
+            {"$project": {"projects": { "$reduce": {"input": '$projects', "initialValue": [], "in": {"$concatArrays": ['$$value', '$$this']}}}}}
+        ]
+        for chr_dict in self.mongo_database['variants_2_0'].aggregate(pipeline):
+            chromosome_names[chr_dict.get('_id')] = chr_dict.get('projects')
         return chromosome_names
 
     def find_missing_contigs(self):
         assembly_report_map = self.load_assembly_report()
         assembly_sequence_name_set = self.load_assembly_fasta()
-        for chromosome in self.get_chromosome_names():
+        chromosome2projects = self.get_chromosome_names()
+
+        for chromosome in chromosome2projects:
             if chromosome not in assembly_report_map:
-                logger.error(f'Missing chromosome {chromosome} in assembly report file {self.assembly_report}')
+                projects = ", ".join(set(chromosome2projects.get(chromosome)))
+                logger.error(f'Missing chromosome {chromosome} used in projects {projects} in assembly report file {self.assembly_report}')
                 continue
             insdc_accession = assembly_report_map.get(chromosome)
             if insdc_accession not in assembly_sequence_name_set:
                 logger.error(f'Missing chromosome {insdc_accession} originally {chromosome} in assembly fasta file {self.assembly_fasta}')
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Provide the processing status of the EVA projects')
+    parser = argparse.ArgumentParser(description='investigate missing contig dbs')
     parser.add_argument("--databases",  nargs='*', default=None, help="list of database to investigate", required=True)
     parser.add_argument("--private-config-xml-file", help="ex: /path/to/eva-maven-settings.xml", required=True)
     parser.add_argument("--profile", choices=('localhost', 'development', 'production_processing'),
