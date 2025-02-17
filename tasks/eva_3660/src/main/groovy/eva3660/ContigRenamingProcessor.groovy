@@ -7,6 +7,14 @@ import java.nio.file.Path
 
 import static org.springframework.util.StringUtils.hasText;
 
+
+class ContigNotFoundException extends IllegalArgumentException {
+    ContigNotFoundException(String message) {
+        super(message)
+    }
+}
+
+
 class ContigRenamingProcessor {
 
     private ContigMapping contigMapping
@@ -22,7 +30,7 @@ class ContigRenamingProcessor {
         if (isGenbankReplacementPossible(contigName, contigSynonyms, message)) {
             return contigSynonyms.getGenBank()
         }
-        throw new IllegalArgumentException(message.toString())
+        throw new ContigNotFoundException(message.toString())
     }
 
     /* More lenient version of this method in accessioning pipeline:
