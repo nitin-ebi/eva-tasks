@@ -81,7 +81,7 @@ class RemediationApplication implements CommandLineRunner {
 
         def (fastaPath, assemblyReportPath) = getFastaAndReportPaths(fastaDir, dbName)
         normaliser = new NormalisationProcessor(fastaPath)
-        contigRenamer = new ContigRenamingProcessor(assemblyReportPath)
+        contigRenamer = new ContigRenamingProcessor(assemblyReportPath, dbName)
 
         populateFilesIdAndNumberOfSamplesMap()
 
