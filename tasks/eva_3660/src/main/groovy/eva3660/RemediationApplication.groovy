@@ -182,8 +182,9 @@ class RemediationApplication implements CommandLineRunner {
 
         // Convert the contig name to INSDC
         // Used ONLY in normalisation, the original contig name will be retained in the DB
+        String insdcContig
         try {
-            String insdcContig = contigRenamer.getInsdcAccession(originalVariant.getChromosome())
+            insdcContig = contigRenamer.getInsdcAccession(originalVariant.getChromosome())
         } catch (ContigNotFoundException e) {
             // Log and bypass these errors
             logger.error("Bypassing ContigNotFoundException {}", e.getMessage())
