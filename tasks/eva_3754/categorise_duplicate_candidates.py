@@ -34,7 +34,12 @@ def are_taxonomy_consistent(sve_map):
             return False
     return True
 
-def categorise_from_json(json_doc):
+def eva_or_dbsnp_accession(accession):
+    if accession > 3000000000:
+        return (accession // 100000) * 100000
+    return None
+
+def categorise_from_json(accession, json_doc):
     out = []
     cve_list = json_doc.get('clusteredVariantEntityList')
     sve_map = json_doc.get('submittedVariantEntityMap')
@@ -49,6 +54,11 @@ def categorise_from_json(json_doc):
         out.append(f'IN_SAME_ASSEMBLIES_{assemblies}')
     else:
         out.append('IN_DIFFERENT_ASSEMBLIES')
+    accessioning_block = eva_or_dbsnp_accession(accession)
+    if accessioning_block:
+        out.append(f'EVA_ACCESSION_{accessioning_block}')
+    else:
+        out.append('DBSNP_ACCESSION')
     if are_taxonomy_consistent(sve_map):
         out.append('CONSISTENT_TAXONOMY')
     else:
@@ -60,7 +70,7 @@ def parse_line(line):
     sp_line = line.strip().split(' ')
     rsid = sp_line[0]
     json_doc = json.loads(' '.join(sp_line[1:]))
-    out = categorise_from_json(json_doc)
+    out = categorise_from_json(accession=int(rsid), json_doc=json_doc)
     print(f'{rsid}\t{out}')
 
 def main():
