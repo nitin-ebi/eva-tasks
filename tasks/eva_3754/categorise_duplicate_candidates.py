@@ -3,6 +3,7 @@ import itertools
 import json
 import sys
 from argparse import ArgumentParser
+from collections import Counter
 
 
 def convert_date(datetime_dict):
@@ -15,16 +16,13 @@ def convert_date(datetime_dict):
 def min_time_gap_between_create_date(cve_list):
     date_list = [convert_date(cve.get('createdDate')) for cve in cve_list]
     delta_dates = [abs(d1-d2) for d1,d2 in  itertools.combinations(date_list, 2)]
-    print(delta_dates)
     min_delta_date = min(delta_dates)
-    print(sorted(delta_dates))
     return min_delta_date
 
-def same_assembly(cve_list):
-    assemblies = set([cve.get('assemblyAccession') for cve in cve_list])
-    if len(assemblies) < len(cve_list):
-        return True
-    return False
+def more_than_one_assembly(cve_list):
+    assembly_count = Counter([cve.get('assemblyAccession') for cve in cve_list])
+
+    return ','.join(sorted([assembly for assembly in assembly_count if assembly_count[assembly] > 1]))
 
 
 def are_taxonomy_consistent(sve_map):
@@ -36,8 +34,6 @@ def are_taxonomy_consistent(sve_map):
             return False
     return True
 
-
-
 def categorise_from_json(json_doc):
     out = []
     cve_list = json_doc.get('clusteredVariantEntityList')
@@ -48,8 +44,9 @@ def categorise_from_json(json_doc):
         out.append('CREATED_AT_THE_SAME_TIME')
     else:
         out.append('CREATED_SEPARATELY')
-    if same_assembly(cve_list):
-        out.append('IN_SAME_ASSEMBLIES')
+    assemblies = more_than_one_assembly(cve_list)
+    if assemblies:
+        out.append(f'IN_SAME_ASSEMBLIES_{assemblies}')
     else:
         out.append('IN_DIFFERENT_ASSEMBLIES')
     if are_taxonomy_consistent(sve_map):
