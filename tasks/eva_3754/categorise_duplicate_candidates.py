@@ -49,7 +49,7 @@ def categorise_from_json(accession, json_doc):
         out.append('CREATED_AT_THE_SAME_TIME')
     else:
         out.append('CREATED_SEPARATELY')
-    assemblies = more_than_one_assembly(cve_list)
+    assemblies = more_than_cve_with_assembly(cve_list)
     if assemblies:
         out.append(f'IN_SAME_ASSEMBLIES_{assemblies}')
     else:
