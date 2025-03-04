@@ -19,7 +19,7 @@ def min_time_gap_between_create_date(cve_list):
     min_delta_date = min(delta_dates)
     return min_delta_date
 
-def more_than_one_assembly(cve_list):
+def more_than_cve_with_assembly(cve_list):
     assembly_count = Counter([cve.get('assemblyAccession') for cve in cve_list])
 
     return ','.join(sorted([assembly for assembly in assembly_count if assembly_count[assembly] > 1]))
@@ -35,7 +35,7 @@ def are_taxonomy_consistent(sve_map):
     return True
 
 def eva_or_dbsnp_accession(accession):
-    if accession > 3000000000:
+    if accession > 5000000000:
         return (accession // 100000) * 100000
     return None
 
@@ -56,9 +56,9 @@ def categorise_from_json(accession, json_doc):
         out.append('IN_DIFFERENT_ASSEMBLIES')
     accessioning_block = eva_or_dbsnp_accession(accession)
     if accessioning_block:
-        out.append(f'EVA_ACCESSION_{accessioning_block}')
+        out.append(f'RECENT_ACCESSION_{accessioning_block}')
     else:
-        out.append('DBSNP_ACCESSION')
+        out.append('OLD_ACCESSION')
     if are_taxonomy_consistent(sve_map):
         out.append('CONSISTENT_TAXONOMY')
     else:
