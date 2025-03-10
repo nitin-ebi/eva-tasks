@@ -22,6 +22,7 @@ import org.springframework.data.mongodb.core.convert.MappingMongoConverter
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
 import org.springframework.data.mongodb.core.query.Update
+import uk.ac.ebi.eva.accession.core.exceptions.PositionOutsideOfContigException
 import uk.ac.ebi.eva.commons.models.data.Variant
 import uk.ac.ebi.eva.commons.models.data.VariantSourceEntity
 import uk.ac.ebi.eva.commons.models.mongo.entity.VariantDocument
@@ -125,8 +126,22 @@ class RemediationApplication implements CommandLineRunner {
             // This also means that potentially more than one normalised document might be generated from one original
             // document, as the final normalised ID might differ depending on the secondary alternates.
             Map<String, VariantDocument> variantIdToDocument = [:]
-            for (VariantSourceEntryMongo variantSource : originalVariant.getVariantSources()) {
-                remediateVariantForFile(originalVariant, variantSource, variantIdToDocument)
+            try {
+                for (VariantSourceEntryMongo variantSource : originalVariant.getVariantSources()) {
+                    remediateVariantForFile(originalVariant, variantSource, variantIdToDocument)
+                }
+            } catch (PositionOutsideOfContigException ex){
+                String projectList = originalVariant.getVariantSources().stream()
+                        .map(vse -> vse.getStudyId())
+                        .collect(Collectors.toSet())
+                        .stream()
+                        .collect(Collectors.joining(","));
+
+                logger.error("Variant is located outside of the chromosome boundaries. _id: {} chr: {} start: {} " +
+                        "ref: {} alt: {} Projects: {}",
+                        originalVariant.getId(), originalVariant.getChromosome(), originalVariant.getStart(),
+                        originalVariant.getReference(), originalVariant.getAlternate(), projectList)
+                continue
             }
             if (variantIdToDocument.isEmpty()) {
                 logger.info("No remediated documents, skipping")
