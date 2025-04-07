@@ -35,8 +35,8 @@ def delete_variants(private_config_xml_file, profile, source_collection, chunk_s
             cve_accessions = set([variant.get('rs') for variant in variants_chunk if variant.get('rs')])
 
             # delete SVE
-            delete_result = sve_coll.delete_many({'_id': {'$in': hash_to_delete}})
-            logger.info(f"Deleted {delete_result.deleted_count} documents from {collection}.")
+            delete_result = sve_coll.delete_many({'_id': {'$in': list(hash_to_delete)}})
+            logger.info(f"Deleted {delete_result.deleted_count} documents from {source_collection}.")
 
             # Delete submitted variant operation if they exists
             for collection in operation_collections:
@@ -52,11 +52,11 @@ def delete_variants(private_config_xml_file, profile, source_collection, chunk_s
             cve_accession_to_keep = set()
             for collection in submitted_collections:
                 sve_coll = mongo_conn[db_name][collection]
-                cve_accession_to_keep.update(set([variant.get('rs') for variant in sve_coll.find({'rs': {'$in': cve_accessions}, 'seq': assembly_to_delete})] ))
+                cve_accession_to_keep.update(set([variant.get('rs') for variant in sve_coll.find({'rs': {'$in': list(cve_accessions)}, 'seq': assembly_to_delete})] ))
             cve_accessions_to_delete = cve_accessions - cve_accession_to_keep
             for collection in cluster_collections:
                 cve_coll = mongo_conn[db_name][collection]
-                hash_to_delete = [cluster.get('_id') for cluster in cve_coll.find({'accession': {'$in': cve_accessions_to_delete}}, {'_id': '1'} )]
+                hash_to_delete = [cluster.get('_id') for cluster in cve_coll.find({'accession': {'$in': list(cve_accessions_to_delete)}}, {'_id': '1'} )]
                 if hash_to_delete:
                     cve_coll.delete_many({'_id': {'$in': hash_to_delete}})
                     logger.info(f"Deleted {delete_result.deleted_count} documents from {collection}.")
