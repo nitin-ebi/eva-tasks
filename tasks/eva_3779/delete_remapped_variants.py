@@ -1,3 +1,4 @@
+import logging
 import sys
 from argparse import ArgumentParser
 from itertools import islice
@@ -28,7 +29,7 @@ def delete_variants(private_config_xml_file, profile, source_collection, chunk_s
 
         chunk_num = 1
         for variants_chunk in chunked_iterable(cursor, chunk_size):
-            logger.info(f"Processing chunk {chunk_num}")
+            logger.info(f"Processing chunk {chunk_num} : {chunk_num * chunk_size}")
             chunk_num += 1
             hash_to_delete = [variant.get('_id') for variant in variants_chunk]
             sve_accessions = [variant.get('accession') for variant in variants_chunk]
@@ -40,25 +41,28 @@ def delete_variants(private_config_xml_file, profile, source_collection, chunk_s
 
             # Delete submitted variant operation if they exists
             for collection in operation_collections:
-                svoe_coll = mongo_conn[db_name][collection]
-                hash_to_delete = [op.get('_id') for op in svoe_coll.find(
-                    {'accession': {'$in': sve_accessions}, 'inactiveObjects.seq': assembly_to_delete},
-                    {'_id': '1'})]
+                tmp_svoe_coll = mongo_conn[db_name][collection]
+                hash_to_delete = [op.get('_id') for op in tmp_svoe_coll.find(
+                    {'accession': {'$in': sve_accessions}, 'inactiveObjects.seq': assembly_to_delete}, {'_id': 1}
+                )]
                 if hash_to_delete:
-                    delete_result = svoe_coll.delete_many({'_id': {'$in': hash_to_delete}})
+                    delete_result = tmp_svoe_coll.delete_many({'_id': {'$in': hash_to_delete}})
                     logger.info(f"Deleted {delete_result.deleted_count} documents from {collection}.")
 
             # delete clustered variants if they are orphan
             cve_accession_to_keep = set()
             for collection in submitted_collections:
-                sve_coll = mongo_conn[db_name][collection]
-                cve_accession_to_keep.update(set([variant.get('rs') for variant in sve_coll.find({'rs': {'$in': list(cve_accessions)}, 'seq': assembly_to_delete})] ))
+                tmp_sve_coll = mongo_conn[db_name][collection]
+                variants_for_these_rs = list(tmp_sve_coll.find({'rs': {'$in': list(cve_accessions)}, 'seq': assembly_to_delete}))
+                cve_accession_to_keep.update(set([variant.get('rs') for variant in variants_for_these_rs] ))
             cve_accessions_to_delete = cve_accessions - cve_accession_to_keep
             for collection in cluster_collections:
-                cve_coll = mongo_conn[db_name][collection]
-                hash_to_delete = [cluster.get('_id') for cluster in cve_coll.find({'accession': {'$in': list(cve_accessions_to_delete)}}, {'_id': '1'} )]
+                tmp_cve_coll = mongo_conn[db_name][collection]
+                hash_to_delete = [cluster.get('_id') for cluster in tmp_cve_coll.find(
+                    {'accession': {'$in': list(cve_accessions_to_delete)}, 'asm':assembly_to_delete},
+                    {'_id': 1})]
                 if hash_to_delete:
-                    cve_coll.delete_many({'_id': {'$in': hash_to_delete}})
+                    delete_result = tmp_cve_coll.delete_many({'_id': {'$in': hash_to_delete}})
                     logger.info(f"Deleted {delete_result.deleted_count} documents from {collection}.")
 
 def main():
@@ -68,7 +72,7 @@ def main():
     arg_parse.add_argument('--profile', help='e.g. production, development or local', required=True)
 
     args = arg_parse.parse_args()
-
+    log_cfg.add_stdout_handler(level=logging.INFO)
     # delete variant in the remapped assembly
     delete_variants(args.private_config_xml_file, args.profile, source_collection='submittedVariantEntity')
     delete_variants(args.private_config_xml_file, args.profile, source_collection='dbsnpSubmittedVariantEntity')
