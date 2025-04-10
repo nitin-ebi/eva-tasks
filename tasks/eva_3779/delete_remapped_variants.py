@@ -10,16 +10,46 @@ logger = log_cfg.get_logger(__name__)
 
 
 assembly_to_delete = 'GCA_002263795.4'
+db_name = 'eva_accession_sharded_EVA3779'
+
 
 def chunked_iterable(iterable, size):
     iterator = iter(iterable)
     while chunk := list(islice(iterator, size)):
         yield chunk
 
+def delete_variants_no_search(collections, find_filter, private_config_xml_file, profile, chunk_size = 1000):
+    with get_mongo_connection_handle(profile, private_config_xml_file) as mongo_conn:
+        for source_collection in collections:
+            collection_obj = mongo_conn[db_name][source_collection]
+            cursor = collection_obj.find(find_filter)
+            chunk_num = 1
+            total_deletion = 0
+            for variants_chunk in chunked_iterable(cursor, chunk_size):
+                logger.info(f"Processing chunk {chunk_num} : {chunk_num * chunk_size} in {source_collection}")
+                chunk_num += 1
+                hash_to_delete = [variant.get('_id') for variant in variants_chunk]
+                delete_result = collection_obj.delete_many({'_id': {'$in': list(hash_to_delete)}})
+                total_deletion += delete_result.deleted_count
+                logger.info(f"Deleted {delete_result.deleted_count} (Total {total_deletion}) documents from {source_collection}.")
+                if total_deletion > 1000000:
+                    break
+
+def delete_variants2(private_config_xml_file, profile, chunk_size = 1000):
+    submitted_collections = ['submittedVariantEntity', 'dbsnpSubmittedVariantEntity']
+    cluster_collections = ['clusteredVariantEntity', 'dbsnpClusteredVariantEntity']
+    operation_collections = ['submittedVariantOperationEntity', 'dbsnpSubmittedVariantOperationEntity']
+    sve_find_filter = {"seq": assembly_to_delete, 'remappedFrom': {'$exists': 1}}
+    cve_find_filter = {"asm": assembly_to_delete}
+    svoe_find_filter = {'inactiveObjects.seq': assembly_to_delete}
+
+    delete_variants_no_search(submitted_collections, sve_find_filter, private_config_xml_file, profile, chunk_size = chunk_size)
+    delete_variants_no_search(cluster_collections, cve_find_filter, private_config_xml_file, profile, chunk_size = chunk_size)
+    delete_variants_no_search(operation_collections, svoe_find_filter, private_config_xml_file, profile, chunk_size = chunk_size)
+
 
 def delete_variants(private_config_xml_file, profile, source_collection, chunk_size = 1000):
     with get_mongo_connection_handle(profile, private_config_xml_file) as mongo_conn:
-        db_name = 'eva_accession_sharded'
         sve_find_filter = {"seq": assembly_to_delete, 'remappedFrom':{'$exists':1}}
         operation_collections = ['submittedVariantOperationEntity', 'dbsnpSubmittedVariantOperationEntity']
         cluster_collections = ['clusteredVariantEntity', 'dbsnpClusteredVariantEntity']
@@ -74,8 +104,7 @@ def main():
     args = arg_parse.parse_args()
     log_cfg.add_stdout_handler(level=logging.INFO)
     # delete variant in the remapped assembly
-    delete_variants(args.private_config_xml_file, args.profile, source_collection='submittedVariantEntity')
-    delete_variants(args.private_config_xml_file, args.profile, source_collection='dbsnpSubmittedVariantEntity')
+    delete_variants2(args.private_config_xml_file, args.profile)
 
     return 0
 
