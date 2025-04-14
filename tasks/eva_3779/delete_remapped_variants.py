@@ -5,6 +5,7 @@ from itertools import islice
 
 from ebi_eva_common_pyutils.logger import logging_config as log_cfg
 from ebi_eva_internal_pyutils.mongo_utils import get_mongo_connection_handle
+from pymongo import ReadPreference
 
 logger = log_cfg.get_logger(__name__)
 
@@ -19,7 +20,7 @@ def chunked_iterable(iterable, size):
         yield chunk
 
 def delete_variants_no_search(collections, find_filter, private_config_xml_file, profile, chunk_size = 1000):
-    with get_mongo_connection_handle(profile, private_config_xml_file) as mongo_conn:
+    with get_mongo_connection_handle(profile, private_config_xml_file, read_preference = ReadPreference.SECONDARY_PREFERRED, write_concern=0) as mongo_conn:
         for source_collection in collections:
             collection_obj = mongo_conn[db_name][source_collection]
             cursor = collection_obj.find(find_filter)
@@ -29,9 +30,11 @@ def delete_variants_no_search(collections, find_filter, private_config_xml_file,
                 logger.info(f"Processing chunk {chunk_num} : {chunk_num * chunk_size} in {source_collection}")
                 chunk_num += 1
                 hash_to_delete = [variant.get('_id') for variant in variants_chunk]
-                delete_result = collection_obj.delete_many({'_id': {'$in': list(hash_to_delete)}})
-                total_deletion += delete_result.deleted_count
-                logger.info(f"Deleted {delete_result.deleted_count} (Total {total_deletion}) documents from {source_collection}.")
+                collection_obj.delete_many({'_id': {'$in': list(hash_to_delete)}})
+                total_deletion += chunk_size
+                logger.info(f"Deleted {chunk_size} (Total {total_deletion}) documents from {source_collection}.")
+                if total_deletion>1000000:
+                    break
 
 def delete_variants2(private_config_xml_file, profile, chunk_size = 1000):
     submitted_collections = ['submittedVariantEntity', 'dbsnpSubmittedVariantEntity']
