@@ -11,7 +11,7 @@ logger = log_cfg.get_logger(__name__)
 
 
 assembly_to_delete = 'GCA_002263795.4'
-db_name = 'eva_accession_sharded_EVA3779'
+db_name = 'eva_accession_sharded'
 
 
 def chunked_iterable(iterable, size):
@@ -23,7 +23,7 @@ def delete_variants_no_search(collections, find_filter, private_config_xml_file,
     with get_mongo_connection_handle(profile, private_config_xml_file, read_preference = ReadPreference.SECONDARY_PREFERRED, write_concern=0) as mongo_conn:
         for source_collection in collections:
             collection_obj = mongo_conn[db_name][source_collection]
-            cursor = collection_obj.find(find_filter)
+            cursor = collection_obj.find(find_filter, no_cursor_timeout=True)
             chunk_num = 1
             total_deletion = 0
             for variants_chunk in chunked_iterable(cursor, chunk_size):
