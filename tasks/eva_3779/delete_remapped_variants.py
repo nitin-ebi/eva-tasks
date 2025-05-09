@@ -33,8 +33,6 @@ def delete_variants_no_search(collections, find_filter, private_config_xml_file,
                 collection_obj.delete_many({'_id': {'$in': list(hash_to_delete)}})
                 total_deletion += chunk_size
                 logger.info(f"Deleted {chunk_size} (Total {total_deletion}) documents from {source_collection}.")
-                if total_deletion>1000000:
-                    break
 
 def delete_variants2(private_config_xml_file, profile, chunk_size = 1000):
     submitted_collections = ['submittedVariantEntity', 'dbsnpSubmittedVariantEntity']
