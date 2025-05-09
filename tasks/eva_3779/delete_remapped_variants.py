@@ -42,7 +42,7 @@ def delete_variants2(private_config_xml_file, profile, chunk_size = 1000):
     operation_collections = ['submittedVariantOperationEntity', 'dbsnpSubmittedVariantOperationEntity']
     sve_find_filter = {"seq": assembly_to_delete, 'remappedFrom': {'$exists': 1}}
     cve_find_filter = {"asm": assembly_to_delete}
-    svoe_find_filter = {'inactiveObjects.seq': assembly_to_delete, 'eventType': {'$not':'RS_BACK_PROPAGATED'}}
+    svoe_find_filter = {'inactiveObjects.seq': assembly_to_delete, 'eventType': {'$ne':'RS_BACK_PROPAGATED'}}
 
     delete_variants_no_search(submitted_collections, sve_find_filter, private_config_xml_file, profile, chunk_size = chunk_size)
     delete_variants_no_search(cluster_collections, cve_find_filter, private_config_xml_file, profile, chunk_size = chunk_size)
