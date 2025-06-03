@@ -161,31 +161,37 @@ class UpdateContigApplication implements CommandLineRunner {
 
             // create a map of original variant id and its INSDC accession chromosome
             Map<String, String> orgVariantInsdcChrMap = variantDocumentList.stream()
-                    .collect(Collectors.toMap(orgVariant -> orgVariant.getId(), orgVariant -> {
+                    .map(orgVariant -> {
                         String orgChromosome = orgVariant.getChromosome()
                         try {
-                            return contigRenamer.getInsdcAccession(orgChromosome)
+                            return new AbstractMap.SimpleEntry<>(orgVariant.getId(),
+                                    contigRenamer.getInsdcAccession(orgChromosome))
                         } catch (ContigNotFoundException e) {
-                            // Log and bypass these errors
-                            logger.error("Could not get INSDC accession for variant {} with chromosome {}. Exception Message: {}", orgVariant.getId(),
-                                    orgVariant.getChromosome(), e.getMessage())
+                            UpdateContigApplication.logger.error("Could not get INSDC accession for variant {} with chromosome {}. Exception Message: {}",
+                                    orgVariant.getId(), orgChromosome, e.getMessage())
                             storeVariantsThatCantBeProcessed(variantsWithIssuesFilePath, orgVariant.getId(), "",
                                     "Could not get INSDC accession for Chromosome " + orgChromosome)
                             return null
                         }
-                    }))
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
 
             // create a map of original variant id and its new id with INSDC accession chromosome
             Map<String, String> orgVariantNewIdMap = variantDocumentList.stream()
-                    .collect(Collectors.toMap(orgVariant -> orgVariant.getId(), orgVariant -> {
-                        String updatedChromosome = orgVariantInsdcChrMap.get(orgVariant.getId())
-                        if (updatedChromosome == null) {
-                            return null
-                        } else {
-                            return VariantDocument.buildVariantId(updatedChromosome, orgVariant.getStart(),
-                                    orgVariant.getReference(), orgVariant.getAlternate())
-                        }
-                    }))
+                    .filter(orgVariant -> orgVariantInsdcChrMap.get(orgVariant.getId()) != null)
+                    .collect(Collectors.toMap(
+                            orgVariant -> orgVariant.getId(),
+                            orgVariant -> {
+                                String updatedChromosome = orgVariantInsdcChrMap.get(orgVariant.getId())
+                                return VariantDocument.buildVariantId(
+                                        updatedChromosome,
+                                        orgVariant.getStart(),
+                                        orgVariant.getReference(),
+                                        orgVariant.getAlternate()
+                                )
+                            }
+                    ))
 
             // get all the new ids
             List<String> newIdsList = orgVariantNewIdMap.values().stream()
@@ -312,7 +318,7 @@ class UpdateContigApplication implements CommandLineRunner {
 
             if (!annotationsToBeUpdated.isEmpty()) {
                 orgVariantNewIdMap = orgVariantNewIdMap.findAll { k, v -> annotationsToBeUpdated.contains(k) }
-                remediateAnnotations(orgVariantNewIdMap)
+                remediateAnnotations(orgVariantNewIdMap, orgVariantInsdcChrMap)
             }
 
 
@@ -411,7 +417,7 @@ class UpdateContigApplication implements CommandLineRunner {
         return updateOperations
     }
 
-    void remediateAnnotations(Map<String, String> orgVariantNewIdMap) {
+    void remediateAnnotations(Map<String, String> orgVariantNewIdMap, Map<String, String> orgVariantInsdcChrMap) {
         Set<String> idProcessed = new HashSet<>()
 
         // Escape variant IDs and prepare a combined regex query
@@ -466,6 +472,7 @@ class UpdateContigApplication implements CommandLineRunner {
                             if (!idProcessed.contains(updatedAnnotationId)) {
                                 Document updated = new Document(annotation)
                                 updated.put("_id", updatedAnnotationId)
+                                updated.put("chr", orgVariantInsdcChrMap.get(orgVariantId))
 
                                 toInsert.add(updated)
                                 idProcessed.add(updatedAnnotationId)

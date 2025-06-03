@@ -47,7 +47,7 @@ class ContigRenamingProcessor {
         StringBuilder message = new StringBuilder()
         if (isGenbankReplacementPossible(contigName, contigSynonyms, message)) {
             return contigSynonyms.getGenBank()
-        } else if (additionalContigMappings.contains(dbName) && additionalContigMappings[dbName].contains(contigName)) {
+        } else if (additionalContigMappings.containsKey(dbName) && additionalContigMappings[dbName].containsKey(contigName)) {
             return additionalContigMappings[dbName][contigName]
         }
 
