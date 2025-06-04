@@ -136,10 +136,10 @@ class UpdateContigNameApplicationTest {
     List<Document> getAnnotationsDataForDifferentTestCases() {
         return Arrays.asList(
                 // new annotation id not present
-                new Document("_id", "A1_11111111_A_G_82_82").append("cachev", 82).append("vepv", 82),
+                new Document("_id", "A1_11111111_A_G_82_82").append("cachev", 82).append("vepv", 82).append("chr", "A1"),
                 // new annotation id present - delete existing and insert new
-                new Document("_id", "A1_11111111_A_G_83_83").append("cachev", 83).append("vepv", 83),
-                new Document("_id", "CM001378.3_11111111_A_G_83_83").append("cachev", 83).append("vepv", 83),
+                new Document("_id", "A1_11111111_A_G_83_83").append("cachev", 83).append("vepv", 83).append("chr", "A1"),
+                new Document("_id", "CM001378.3_11111111_A_G_83_83").append("cachev", 83).append("vepv", 83).append("chr", "CM001378.3"),
         )
     }
 
@@ -262,6 +262,8 @@ class UpdateContigNameApplicationTest {
         List<Document> insdcAnnot2 = annotationsColl.find(Filters.eq("_id", "CM001378.3_11111111_A_G_83_83")).into([])
         assertEquals(1, insdcAnnot1.size())
         assertEquals(1, insdcAnnot2.size())
+        assertEquals("CM001378.3", insdcAnnot1.get(0).getAt("chr"))
+        assertEquals("CM001378.3", insdcAnnot2.get(0).getAt("chr"))
 
 
         // case_id_collision_all_sid_fid_diff
