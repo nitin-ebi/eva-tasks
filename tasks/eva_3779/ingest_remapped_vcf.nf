@@ -20,18 +20,21 @@ process ingest_vcf_into_mongo {
     script:
     """
     # Check the file name to know which database to load the variants into
-    if [[ $remapped_vcf == *_eva_remapped.vcf ]]
+    TMP=$remapped_vcf
+    if [[ \$TMP == *_eva_remapped.vcf ]]
     then
         loadTo=EVA
     else
         loadTo=DBSNP
     fi
-
+    # Extract the source GCA
+    remappedFrom=\${TMP:1:14}
     java -Xmx${task.memory.toGiga()-1}G -jar $params.jar.vcf_ingestion \
         --spring.config.location=file:${params.ingestion_properties} \
         --parameters.vcf=${remapped_vcf} \
         --parameters.assemblyReportUrl=file:${params.target_report} \
         --parameters.loadTo=\${loadTo} \
+        --parameters.remappedFrom==\${remappedFrom}
         > ${remapped_vcf}_ingestion.log
     """
 }
