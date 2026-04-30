@@ -1,9 +1,7 @@
 package eva4135
 
-import com.mongodb.client.model.Filters
-import com.mongodb.client.model.UpdateOneModel
-import com.mongodb.client.model.Updates
-import com.mongodb.client.model.WriteModel
+import com.mongodb.MongoBulkWriteException
+import com.mongodb.client.model.*
 import groovy.cli.picocli.CliBuilder
 import groovy.json.JsonSlurper
 import org.bson.Document
@@ -119,6 +117,7 @@ class UpdateAnnotationsApplication implements CommandLineRunner {
         }
 
         // Finished processing
+        mongoCursor.close()
         System.exit(0)
     }
 
@@ -169,14 +168,24 @@ class UpdateAnnotationsApplication implements CommandLineRunner {
 
             for (AnnotationUpdateModel annotationUpdateModel : annotationsToBeUpdatedWithInsdcChromosomes) {
                 // update annotation id and chr to be insdc
-                Document updatedAnnotDocument = annotationUpdateModel.getOrginalAnnotationDocument();
+                Document updatedAnnotDocument = new Document(annotationUpdateModel.getOrginalAnnotationDocument())
                 updatedAnnotDocument["_id"] = annotationUpdateModel.getAnnotationId().replace(annotationUpdateModel.getChromosome(), annotationUpdateModel.getInsdcChromosome())
                 updatedAnnotDocument["chr"] = annotationUpdateModel.getInsdcChromosome()
                 documentsToInsert.add(updatedAnnotDocument)
             }
 
             // insert new documents (documents with insdc chromosome/id)
-            mongoTemplate.getCollection(ANNOTATIONS_COLLECTION).insertMany(documentsToInsert)
+            try {
+                mongoTemplate.getCollection(ANNOTATIONS_COLLECTION).insertMany(documentsToInsert, new InsertManyOptions().ordered(false))
+            } catch (MongoBulkWriteException e) {
+                // Ignore duplicate key errors
+                if (e.getWriteErrors().every { it.code == 11000 }) {
+                    logger.warn("Duplicate keys encountered, ignored.")
+                } else {
+                    logger.error("Errors while inserting: " + e)
+                    throw e
+                }
+            }
 
             // delete existing annotations with non insdc chromosomes
             Set<String> documentsToDeleteIdList = annotationsToBeUpdatedWithInsdcChromosomes.stream()
