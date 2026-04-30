@@ -18,6 +18,8 @@ import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
 
 import java.nio.file.Paths
+import java.util.regex.Matcher
+import java.util.regex.Pattern
 import java.util.stream.Collectors
 
 import static org.springframework.data.mongodb.core.query.Criteria.where
@@ -167,7 +169,10 @@ class UpdateAnnotationsApplication implements CommandLineRunner {
             for (AnnotationUpdateModel annotationUpdateModel : annotationsToBeUpdatedWithInsdcChromosomes) {
                 // update annotation id and chr to be INSDC
                 Document updatedAnnotDocument = new Document(annotationUpdateModel.getOrginalAnnotationDocument())
-                String newId = annotationUpdateModel.getAnnotationId().replace(annotationUpdateModel.getChromosome(), annotationUpdateModel.getInsdcChromosome())
+                String newId = annotationUpdateModel.getAnnotationId() .replaceFirst(
+                        "^" + Pattern.quote(annotationUpdateModel.getChromosome()),
+                        Matcher.quoteReplacement(annotationUpdateModel.getInsdcChromosome())
+                )
                 updatedAnnotDocument["_id"] = newId
                 updatedAnnotDocument["chr"] = annotationUpdateModel.getInsdcChromosome()
                 bulkUpdateOperations.add(new ReplaceOneModel<>(
