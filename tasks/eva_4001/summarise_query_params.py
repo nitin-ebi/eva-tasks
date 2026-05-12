@@ -58,7 +58,7 @@ def main():
         print(f"{endpoint}  ({n:,} requests)")
         params = param_counts[endpoint]
         if not params:
-            print("No query parameters observe)")
+            print("No query parameters observed)")
         else:
             rows = sorted(
                 ([param, count, f"{100 * count // n}%"] for param, count in params.items()),

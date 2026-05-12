@@ -30,8 +30,14 @@ _RULE_KEYS = set(CONTEXT_RULES.keys())
 # All proper prefixes of rule keys — used to know when to keep accumulating segments.
 _RULE_KEY_PREFIXES = {k[:i] for k in _RULE_KEYS for i in range(1, len(k))}
 
+BATCH_SIZE = 10_000
 
 def normalise_path(path):
+    """
+    Normalise a path by splitting it into segments and applying rules to replace segments with placeholders.
+    E.g. /eva/webservices/contig-alias/v1/chromosomes/md5checksum/7b6e06758e53927330346e9e7cc00cce
+     ==> /eva/webservices/contig-alias/v1/chromosomes/md5checksum/{md5}
+    """
     segments = path.split('/')
     normalised = []
     pending_key = ()   # rule-key prefix accumulated so far
@@ -66,10 +72,6 @@ def normalise_path(path):
             pending_key = ()
 
     return '/'.join(normalised)
-
-
-
-BATCH_SIZE = 10_000
 
 
 def stream_rows(conn, query):
